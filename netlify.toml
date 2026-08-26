@@ -1,7 +1,8 @@
 [build]
   base = "outputs/lending-operations-console"
   command = "npm run build"
-  publish = "dist"
+  # Resolved from the repository root, not from `base`.
+  publish = "outputs/lending-operations-console/dist"
 
 [build.environment]
   NODE_VERSION = "22"
