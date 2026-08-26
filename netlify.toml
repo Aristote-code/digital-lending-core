@@ -1,0 +1,14 @@
+[build]
+  base = "outputs/lending-operations-console"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# The console is a client-side SPA, so every deep link (/applications/APP-00412,
+# /verify-employment/EV-00218) must fall through to index.html rather than 404.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
