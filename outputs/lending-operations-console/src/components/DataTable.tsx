@@ -10,13 +10,15 @@ export interface Column<T> {
   align?: "right";
 }
 
-export function DataTable<T>({ rows, columns, rowKey, pageSize = 10, empty, loading }: {
+export function DataTable<T>({ rows, columns, rowKey, pageSize = 10, empty, loading, onRowClick }: {
   rows: T[];
   columns: Column<T>[];
   rowKey: (row: T) => string;
   pageSize?: number;
   empty?: { title: string; text: string };
   loading?: boolean;
+  /** Opens the row's record in a drawer. Rows become keyboard-activatable when set. */
+  onRowClick?: (row: T) => void;
 }) {
   const [sort, setSort] = useState<{ key: string; direction: 1 | -1 } | null>(null);
   const [page, setPage] = useState(0);
@@ -70,7 +72,23 @@ export function DataTable<T>({ rows, columns, rowKey, pageSize = 10, empty, load
           </thead>
           <tbody>
             {visible.map((row) => (
-              <tr key={rowKey(row)}>
+              <tr
+                key={rowKey(row)}
+                className={onRowClick ? "row-clickable" : ""}
+                tabIndex={onRowClick ? 0 : undefined}
+                role={onRowClick ? "button" : undefined}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onKeyDown={
+                  onRowClick
+                    ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onRowClick(row);
+                        }
+                      }
+                    : undefined
+                }
+              >
                 {columns.map((column) => (
                   <td key={column.key} className={column.align === "right" ? "right" : ""}>
                     {column.render(row)}

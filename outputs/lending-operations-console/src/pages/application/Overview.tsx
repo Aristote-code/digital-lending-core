@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 import { AlertTriangle, ArrowRight, Building2, CheckCircle2, ChevronRight, ClipboardCheck, Clock3, Landmark, WalletCards, XCircle } from "lucide-react";
 import { Badge, SectionHead } from "../../components/ui";
+import { DropdownMenu, MenuItem } from "../../components/overlays";
 import { dti, formatRwf } from "../../lib/format";
 import { riskTone, statusTone } from "../../lib/tone";
 import type { Application, Customer } from "../../types";
@@ -125,16 +125,21 @@ function DecisionRail({ application, customer, onTab }: { application: Applicati
         </p>
       )}
 
-      <button className="btn primary full-btn" onClick={() => onTab(application.risk === "High" ? "Credit" : "Decision")}>
-        {application.risk === "High" ? "Review red flags" : "Open credit decision"}
-        <ArrowRight size={15} />
-      </button>
-      <button className="btn full-btn" onClick={() => { onTab("Documents"); toast("Request information from the Documents tab"); }}>
-        Request more information
-      </button>
-      <button className="btn full-btn" onClick={() => navigate("/customers/" + customer.id)}>
-        View customer profile
-      </button>
+      <div className="rail-actions">
+        <button className="btn primary full-btn" onClick={() => onTab(application.risk === "High" ? "Credit" : "Decision")}>
+          {application.risk === "High" ? "Review red flags" : "Open credit decision"}
+          <ArrowRight size={15} />
+        </button>
+        <DropdownMenu label="More application actions">
+          {(close) => (
+            <>
+              <MenuItem onSelect={() => { close(); onTab("Documents"); }}>Request more information</MenuItem>
+              <MenuItem onSelect={() => { close(); navigate("/customers/" + customer.id); }}>View customer profile</MenuItem>
+              <MenuItem onSelect={() => { close(); onTab("Activity"); }}>View audit trail</MenuItem>
+            </>
+          )}
+        </DropdownMenu>
+      </div>
     </aside>
   );
 }

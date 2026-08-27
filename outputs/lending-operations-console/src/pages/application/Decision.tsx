@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { KV, Notice, SectionHead } from "../../components/ui";
-import { Modal, Tooltip } from "../../components/overlays";
+import { Dialog, DropdownMenu, MenuItem, MenuLabel, Tooltip } from "../../components/overlays";
 import { dti, formatRwf } from "../../lib/format";
 import { useDemo } from "../../store";
 import type { Application, Customer } from "../../types";
@@ -61,17 +61,26 @@ export function Decision({ application, customer }: { application: Application; 
 
         <section className="surface padded">
           <SectionHead title="Decision actions" description="A reason is mandatory and stored in the audit trail." />
+          {/* The two outcomes that end the case sit in the open; the qualified ones live
+              behind the overflow so the page states the decision rather than a menu of four. */}
           <div className="decision-actions">
             {blocked && !highRisk ? <Tooltip text="Employer verification must be completed first">{approveButton}</Tooltip> : approveButton}
-            <button className="btn" disabled={decided || highRisk || blocked} onClick={() => setOutcome("Approved with conditions")}>
-              Approve with conditions
-            </button>
-            <button className="btn" disabled={decided} onClick={() => setOutcome("Manual review")}>
-              Send for manual review
-            </button>
             <button className="btn danger" disabled={decided} onClick={() => setOutcome("Rejected")}>
               Reject application
             </button>
+            <DropdownMenu label="Other decision outcomes">
+              {(close) => (
+                <>
+                  <MenuLabel>Qualified outcomes</MenuLabel>
+                  <MenuItem disabled={decided || highRisk || blocked} onSelect={() => { close(); setOutcome("Approved with conditions"); }}>
+                    Approve with conditions
+                  </MenuItem>
+                  <MenuItem disabled={decided} onSelect={() => { close(); setOutcome("Manual review"); }}>
+                    Send for manual review
+                  </MenuItem>
+                </>
+              )}
+            </DropdownMenu>
           </div>
           {decided && <Notice good={application.decision !== "Rejected"} title={"Decision: " + application.decision} text={application.decisionReason} />}
         </section>
@@ -103,7 +112,7 @@ function DecisionDialog({ outcome, onClose, application, onSubmit }: { outcome: 
   const destructive = outcome === "Rejected";
 
   return (
-    <Modal
+    <Dialog
       open={open}
       onClose={() => {
         setReason("");
@@ -149,6 +158,6 @@ function DecisionDialog({ outcome, onClose, application, onSubmit }: { outcome: 
           <button className={destructive ? "btn danger" : "btn primary"}>{outcome ? ACTION_LABELS[outcome] : ""}</button>
         </div>
       </form>
-    </Modal>
+    </Dialog>
   );
 }

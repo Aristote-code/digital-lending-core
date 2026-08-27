@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Navigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Shell } from "../layout/Shell";
-import { Badge, KV, Notice, PageHead, SectionHead, Timeline } from "../components/ui";
-import { Modal, Sheet } from "../components/overlays";
+import { Badge, Field, KV, Notice, PageHead, SectionHead, Timeline } from "../components/ui";
+import { Dialog, Drawer, DrawerSection, DropdownMenu, MenuItem, MenuSeparator } from "../components/overlays";
 import { formatRwf } from "../lib/format";
 import { statusTone } from "../lib/tone";
 import { useDemo } from "../store";
@@ -50,22 +50,29 @@ export function CollectionCase() {
           <Notice good title={"Promise recorded for " + item.promiseDate} text="The case reopens automatically if the promise is broken." />
         )}
 
+        {/* One primary action, one common secondary, everything else behind the overflow —
+            a row of five equal-weight buttons tells you nothing about what to do next. */}
         <div className="actionbar">
           <button className="btn primary" onClick={() => setContactOpen(true)}>
             Record contact
           </button>
-          <button className="btn" onClick={() => toast.success("SMS reminder sent to " + customer.phone)}>
-            Send reminder
-          </button>
           <button className="btn" onClick={() => setPromiseOpen(true)}>
             Promise to pay
           </button>
-          <button className="btn" onClick={() => setRestructureOpen(true)} disabled={item.status === "Restructured"}>
-            Restructure
-          </button>
-          <button className="btn danger" onClick={() => setEscalateOpen(true)} disabled={item.status === "Escalated"}>
-            Escalate
-          </button>
+          <DropdownMenu label="More case actions">
+            {(close) => (
+              <>
+                <MenuItem onSelect={() => { close(); toast.success("SMS reminder sent to " + customer.phone); }}>Send reminder</MenuItem>
+                <MenuItem onSelect={() => { close(); setRestructureOpen(true); }} disabled={item.status === "Restructured"}>
+                  Restructure loan
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem destructive onSelect={() => { close(); setEscalateOpen(true); }} disabled={item.status === "Escalated"}>
+                  Escalate to compliance
+                </MenuItem>
+              </>
+            )}
+          </DropdownMenu>
         </div>
 
         <section className="surface timeline">
@@ -77,10 +84,10 @@ export function CollectionCase() {
       </div>
 
       <ContactDialog open={contactOpen} onClose={() => setContactOpen(false)} item={item} phone={customer.phone} name={customer.name} />
-      <PromiseSheet open={promiseOpen} onClose={() => setPromiseOpen(false)} item={item} />
-      <RestructureSheet open={restructureOpen} onClose={() => setRestructureOpen(false)} item={item} loan={loan} />
+      <PromiseDialog open={promiseOpen} onClose={() => setPromiseOpen(false)} item={item} />
+      <RestructureDialog open={restructureOpen} onClose={() => setRestructureOpen(false)} item={item} loan={loan} />
 
-      <Modal open={escalateOpen} onClose={() => setEscalateOpen(false)} title="Escalate to compliance" description={item.id + " · " + customer.name}>
+      <Dialog open={escalateOpen} onClose={() => setEscalateOpen(false)} title="Escalate to compliance" description={item.id + " · " + customer.name}>
         <form
           className="form"
           onSubmit={(event) => {
@@ -102,7 +109,7 @@ export function CollectionCase() {
             <button className="btn danger">Escalate case</button>
           </div>
         </form>
-      </Modal>
+      </Dialog>
     </Shell>
   );
 }
@@ -113,7 +120,7 @@ function ContactDialog({ open, onClose, item, phone, name }: { open: boolean; on
   const [note, setNote] = useState("Spoke with borrower; requested two days to confirm payment.");
 
   return (
-    <Modal open={open} onClose={onClose} title="Record contact" description={name + " · " + phone}>
+    <Dialog open={open} onClose={onClose} title="Record contact" description={name + " · " + phone}>
       <form
         className="form"
         onSubmit={(event) => {
@@ -142,11 +149,11 @@ function ContactDialog({ open, onClose, item, phone, name }: { open: boolean; on
           <button className="btn primary">Save contact</button>
         </div>
       </form>
-    </Modal>
+    </Dialog>
   );
 }
 
-function PromiseSheet({ open, onClose, item }: { open: boolean; onClose: () => void; item: CaseType }) {
+function PromiseDialog({ open, onClose, item }: { open: boolean; onClose: () => void; item: CaseType }) {
   const { dispatch } = useDemo();
   const [date, setDate] = useState("2026-08-31");
   const [amount, setAmount] = useState(String(item.amountOverdue));
@@ -159,7 +166,7 @@ function PromiseSheet({ open, onClose, item }: { open: boolean; onClose: () => v
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Promise to pay" description={formatRwf(item.amountOverdue) + " overdue"}>
+    <Dialog open={open} onClose={onClose} title="Promise to pay" description={formatRwf(item.amountOverdue) + " overdue"}>
       <form
         className="form"
         onSubmit={(event) => {
@@ -181,20 +188,20 @@ function PromiseSheet({ open, onClose, item }: { open: boolean; onClose: () => v
           Notes
           <textarea value={note} onChange={(event) => setNote(event.target.value)} />
         </label>
-        <button className="btn primary full-btn">Record promise</button>
+        <div className="modal-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary">Record promise</button></div>
       </form>
-    </Sheet>
+    </Dialog>
   );
 }
 
-function RestructureSheet({ open, onClose, item, loan }: { open: boolean; onClose: () => void; item: CaseType; loan: Loan }) {
+function RestructureDialog({ open, onClose, item, loan }: { open: boolean; onClose: () => void; item: CaseType; loan: Loan }) {
   const { dispatch } = useDemo();
   const [term, setTerm] = useState(String(loan.term + 6));
   const [reason, setReason] = useState("Borrower income reduced; extending the term restores affordability.");
   const newInstallment = Math.round(loan.outstanding / Math.max(Number(term) || 1, 1));
 
   return (
-    <Sheet open={open} onClose={onClose} title="Restructure loan" description={loan.id + " · " + formatRwf(loan.outstanding) + " outstanding"}>
+    <Dialog open={open} onClose={onClose} title="Restructure loan" description={loan.id + " · " + formatRwf(loan.outstanding) + " outstanding"}>
       <div className="restructure">
         <div>
           <h3>Original</h3>
@@ -227,8 +234,8 @@ function RestructureSheet({ open, onClose, item, loan }: { open: boolean; onClos
           Reason *
           <textarea required value={reason} onChange={(event) => setReason(event.target.value)} />
         </label>
-        <button className="btn primary full-btn">Submit for approval</button>
+        <div className="modal-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary">Submit for approval</button></div>
       </form>
-    </Sheet>
+    </Dialog>
   );
 }

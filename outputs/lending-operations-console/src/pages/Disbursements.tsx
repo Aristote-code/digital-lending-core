@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CheckCircle2 } from "lucide-react";
 import { Shell } from "../layout/Shell";
-import { Badge, KV, PageHead, Tabs } from "../components/ui";
+import { Badge, Field, PageHead, Tabs } from "../components/ui";
 import { DataTable, type Column } from "../components/DataTable";
-import { AlertDialog, Sheet } from "../components/overlays";
+import { ConfirmDialog, Drawer, DrawerSection } from "../components/overlays";
 import { formatRwf } from "../lib/format";
 import { statusTone } from "../lib/tone";
 import { useDemo } from "../store";
@@ -44,15 +44,6 @@ export function Disbursements() {
     { key: "compliance", header: "Compliance", render: () => <Badge tone="success">Cleared</Badge> },
     { key: "destination", header: "Destination", render: (row) => row.destination },
     { key: "status", header: "Status", render: (row) => <Badge tone={statusTone(row.disbursementStatus)}>{row.disbursementStatus}</Badge> },
-    {
-      key: "action",
-      header: "",
-      render: (row) => (
-        <button className="btn small" onClick={() => setSelectedId(row.id)}>
-          Review
-        </button>
-      ),
-    },
   ];
 
   return (
@@ -66,37 +57,50 @@ export function Disbursements() {
             columns={columns}
             rowKey={(row) => row.id}
             pageSize={12}
+            onRowClick={(row) => setSelectedId(row.id)}
             empty={{ title: tab === "Ready" ? "Nothing to disburse" : "No disbursements yet", text: tab === "Ready" ? "Approved loans appear here once credit signs off." : "Completed disbursements will be listed here." }}
           />
         </section>
       </div>
 
-      <Sheet
-        open={Boolean(selected) && !confirming}
-        onClose={() => setSelectedId(null)}
-        title="Disbursement"
-        description={selected ? selected.id + " · " + formatRwf(selected.principal) : ""}
-      >
-        <div className="checklist">
-          {CHECKLIST.map((item) => (
-            <p key={item}>
-              <CheckCircle2 size={16} />
-              {item}
-            </p>
-          ))}
-        </div>
-        <div className="sheet-section">
-          <KV label="Borrower" value={selected ? named(selected.customerId) : ""} />
-          <KV label="Destination" value={selected?.destination ?? ""} />
-          <KV label="Amount" value={selected ? formatRwf(selected.principal) : ""} />
-          <KV label="Term" value={selected ? selected.term + " months" : ""} />
-        </div>
-        <button className="btn primary full-btn" disabled={selected?.disbursementStatus === "Completed"} onClick={() => setConfirming(true)}>
-          {selected?.disbursementStatus === "Completed" ? "Already disbursed" : "Approve disbursement"}
-        </button>
-      </Sheet>
+      {selected && (
+        <Drawer
+          open={!confirming}
+          onClose={() => setSelectedId(null)}
+          title={named(selected.customerId)}
+          description={selected.id + " · " + formatRwf(selected.principal) + " over " + selected.term + " months"}
+          badge={<Badge tone={statusTone(selected.disbursementStatus)}>{selected.disbursementStatus}</Badge>}
+          size="md"
+          footer={
+            <button className="btn primary" disabled={selected.disbursementStatus === "Completed"} onClick={() => setConfirming(true)}>
+              {selected.disbursementStatus === "Completed" ? "Already disbursed" : "Approve disbursement"}
+            </button>
+          }
+        >
+          <DrawerSection title="Pre-disbursement checks">
+            <div className="checklist">
+              {CHECKLIST.map((item) => (
+                <p key={item}>
+                  <CheckCircle2 size={15} />
+                  {item}
+                </p>
+              ))}
+            </div>
+          </DrawerSection>
+          <DrawerSection title="Payment">
+            <div className="field-grid">
+              <Field label="Borrower" value={named(selected.customerId)} />
+              <Field label="Destination" value={selected.destination} />
+              <Field label="Amount" value={formatRwf(selected.principal)} />
+              <Field label="Term" value={selected.term + " months"} />
+              <Field label="Instalment" value={formatRwf(selected.nextPayment)} />
+              <Field label="Officer" value={selected.officer} />
+            </div>
+          </DrawerSection>
+        </Drawer>
+      )}
 
-      <AlertDialog
+      <ConfirmDialog
         open={confirming}
         onClose={() => !busy && setConfirming(false)}
         title={selected ? "Disburse " + formatRwf(selected.principal) + "?" : "Confirm disbursement"}

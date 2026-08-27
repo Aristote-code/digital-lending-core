@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Building2, CalendarDays, ChevronRight, FileCheck2, FileText, Gauge, HandCoins, Landmark, Scale } from "lucide-react";
 import { Shell } from "../layout/Shell";
 import { Badge, PageHead, SectionHead } from "../components/ui";
 import { DataTable, type Column } from "../components/DataTable";
 import { applicationColumns } from "../components/columns";
+import { ApplicationDrawer, CollectionDrawer, LoanDrawer } from "../components/RecordDrawer";
 import { formatRwf } from "../lib/format";
 import { statusTone } from "../lib/tone";
 import { useDemo } from "../store";
@@ -85,12 +87,21 @@ export function Home() {
   const role = state.activeRole;
   const metrics = metricsFor(role, state);
   const total = metrics.reduce((sum, metric) => sum + metric.value, 0);
+  const [peek, setPeek] = useState<{ kind: "application" | "loan" | "collection"; id: string } | null>(null);
 
   const queue =
     role === "Collections"
-      ? { title: "Cases needing action", description: "Overdue exposure ordered by ageing", node: <DataTable rows={state.collections} columns={collectionColumns(state)} rowKey={(row) => row.id} empty={{ title: "No open cases", text: "Every collection case is settled." }} /> }
+      ? {
+        title: "Cases needing action",
+        description: "Overdue exposure ordered by ageing",
+        node: <DataTable rows={state.collections} columns={collectionColumns(state)} rowKey={(row) => row.id} onRowClick={(row) => setPeek({ kind: "collection", id: row.id })} empty={{ title: "No open cases", text: "Every collection case is settled." }} />,
+      }
       : role === "Finance"
-        ? { title: "Ready to disburse", description: "Approved loans awaiting release", node: <DataTable rows={state.loans.filter((item) => item.disbursementStatus === "Ready")} columns={loanColumns(state)} rowKey={(row) => row.id} empty={{ title: "Queue is clear", text: "No approved loans are waiting for disbursement." }} /> }
+        ? {
+          title: "Ready to disburse",
+          description: "Approved loans awaiting release",
+          node: <DataTable rows={state.loans.filter((item) => item.disbursementStatus === "Ready")} columns={loanColumns(state)} rowKey={(row) => row.id} onRowClick={(row) => setPeek({ kind: "loan", id: row.id })} empty={{ title: "Queue is clear", text: "No approved loans are waiting for disbursement." }} />,
+        }
         : {
           title: "Due today",
           description: "Prioritized across your active queues",
@@ -100,6 +111,7 @@ export function Home() {
               columns={applicationColumns(state)}
               rowKey={(row) => row.id}
               pageSize={6}
+              onRowClick={(row) => setPeek({ kind: "application", id: row.id })}
               empty={{ title: "Nothing due today", text: "Your queues are clear." }}
             />
           ),
@@ -136,6 +148,10 @@ export function Home() {
           {queue.node}
         </section>
       </div>
+
+      <ApplicationDrawer id={peek?.kind === "application" ? peek.id : null} onClose={() => setPeek(null)} />
+      <LoanDrawer id={peek?.kind === "loan" ? peek.id : null} onClose={() => setPeek(null)} />
+      <CollectionDrawer id={peek?.kind === "collection" ? peek.id : null} onClose={() => setPeek(null)} />
     </Shell>
   );
 }

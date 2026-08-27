@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowRight, Bell, ChevronRight, Command, Moon, PanelLeftClose, PanelLeftOpen, RefreshCcw, Search, Settings, Sun } from "lucide-react";
 import { Avatar } from "../components/ui";
-import { Modal, Popover } from "../components/overlays";
+import { Dialog, Popover } from "../components/overlays";
 import { navFor, queueCount, roles } from "../lib/roles";
 import { formatRwf } from "../lib/format";
 import { useDemo } from "../store";
@@ -58,7 +58,7 @@ function CommandMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Jump to anything" description="Search people, applications, loans, and queues." wide>
+    <Dialog open={open} onClose={onClose} title="Jump to anything" description="Search people, applications, loans, and queues." size="lg">
       <div className="cmd-search">
         <Search size={17} />
         <input
@@ -82,7 +82,7 @@ function CommandMenu({ open, onClose }: { open: boolean; onClose: () => void }) 
         ))}
         {!results.length && <p className="cmd-empty">No matches for “{query}”.</p>}
       </div>
-    </Modal>
+    </Dialog>
   );
 }
 

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { CheckCircle2, FileText, MoreHorizontal } from "lucide-react";
+import { FileText, MoreHorizontal } from "lucide-react";
 import { Badge, KV, SectionHead, SkeletonBlock } from "../../components/ui";
-import { Modal, Popover, Sheet } from "../../components/overlays";
+import { Dialog, DropdownMenu, MenuItem } from "../../components/overlays";
 import { statusTone } from "../../lib/tone";
 import { useDemo } from "../../store";
 import type { Application, ApplicationDocument } from "../../types";
@@ -13,7 +13,6 @@ const REQUESTABLE = ["Recent payslip", "Six-month bank statement", "Employment c
 export function Documents({ application }: { application: Application }) {
   const { dispatch } = useDemo();
   const [selectedId, setSelectedId] = useState(application.documents[0]?.id);
-  const [verified, setVerified] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [requesting, setRequesting] = useState(false);
 
@@ -35,7 +34,7 @@ export function Documents({ application }: { application: Application }) {
         <button className="btn primary" onClick={() => setRequesting(true)}>
           Request documents
         </button>
-        <RequestSheet open={requesting} onClose={() => setRequesting(false)} applicationId={application.id} />
+        <RequestDialog open={requesting} onClose={() => setRequesting(false)} applicationId={application.id} />
       </section>
     );
   }
@@ -68,15 +67,15 @@ export function Documents({ application }: { application: Application }) {
         <section className="surface preview">
           <div className="preview-bar">
             <span>{selected?.name}</span>
-            <Popover align="right" label="Document actions" trigger={<MoreHorizontal size={16} />}>
+            <DropdownMenu label="Document actions" trigger={<MoreHorizontal size={15} />}>
               {(close) => (
                 <>
-                  <button className="popover-item" onClick={() => { close(); toast("Opening full-size preview"); }}>Open full size</button>
-                  <button className="popover-item" onClick={() => { close(); toast.success("Download started"); }}>Download</button>
-                  <button className="popover-item" onClick={() => { close(); setRequesting(true); }}>Request replacement</button>
+                  <MenuItem onSelect={() => { close(); toast("Opening full-size preview"); }}>Open full size</MenuItem>
+                  <MenuItem onSelect={() => { close(); toast.success("Download started"); }}>Download</MenuItem>
+                  <MenuItem onSelect={() => { close(); setRequesting(true); }}>Request replacement</MenuItem>
                 </>
               )}
-            </Popover>
+            </DropdownMenu>
           </div>
           {loadingPreview ? (
             <div className="preview-loading">
@@ -104,7 +103,6 @@ export function Documents({ application }: { application: Application }) {
             onClick={() => {
               if (!selected) return;
               dispatch({ type: "DOCUMENT_STATUS", applicationId: application.id, documentId: selected.id, status: "Verified" });
-              setVerified(true);
               toast.success(selected.name + " verified");
             }}
           >
@@ -115,17 +113,6 @@ export function Documents({ application }: { application: Application }) {
           </button>
         </section>
       </div>
-
-      <Sheet open={verified} onClose={() => setVerified(false)} title="Document verified" description="The checklist and audit trail were updated.">
-        <div className="success">
-          <CheckCircle2 size={44} />
-          <h3>{selected?.name}</h3>
-          <p>Verified by Marie · recorded in the audit trail.</p>
-          <button className="btn primary" onClick={() => setVerified(false)}>
-            Done
-          </button>
-        </div>
-      </Sheet>
 
       <RejectDialog
         open={rejecting}
@@ -139,7 +126,7 @@ export function Documents({ application }: { application: Application }) {
         }}
       />
 
-      <RequestSheet open={requesting} onClose={() => setRequesting(false)} applicationId={application.id} />
+      <RequestDialog open={requesting} onClose={() => setRequesting(false)} applicationId={application.id} />
     </>
   );
 }
@@ -147,7 +134,7 @@ export function Documents({ application }: { application: Application }) {
 function RejectDialog({ open, onClose, document, onSubmit }: { open: boolean; onClose: () => void; document?: ApplicationDocument; onSubmit: (reason: string) => void }) {
   const [reason, setReason] = useState(REJECT_REASONS[0]);
   return (
-    <Modal open={open} onClose={onClose} title="Reject document" description={document?.name}>
+    <Dialog open={open} onClose={onClose} title="Reject document" description={document?.name}>
       <form
         className="form"
         onSubmit={(event) => {
@@ -174,11 +161,11 @@ function RejectDialog({ open, onClose, document, onSubmit }: { open: boolean; on
           <button className="btn danger">Reject document</button>
         </div>
       </form>
-    </Modal>
+    </Dialog>
   );
 }
 
-function RequestSheet({ open, onClose, applicationId }: { open: boolean; onClose: () => void; applicationId: string }) {
+function RequestDialog({ open, onClose, applicationId }: { open: boolean; onClose: () => void; applicationId: string }) {
   const { dispatch } = useDemo();
   const [items, setItems] = useState<string[]>([]);
   const [message, setMessage] = useState("We need one more document to complete your assessment.");
@@ -186,7 +173,7 @@ function RequestSheet({ open, onClose, applicationId }: { open: boolean; onClose
   const toggle = (item: string) => setItems((previous) => (previous.includes(item) ? previous.filter((entry) => entry !== item) : [...previous, item]));
 
   return (
-    <Sheet open={open} onClose={onClose} title="Request information" description="Ask the borrower for additional evidence.">
+    <Dialog open={open} onClose={onClose} title="Request information" description="Ask the borrower for additional evidence.">
       <form
         className="form"
         onSubmit={(event) => {
@@ -209,10 +196,8 @@ function RequestSheet({ open, onClose, applicationId }: { open: boolean; onClose
           Message
           <textarea value={message} onChange={(event) => setMessage(event.target.value)} />
         </label>
-        <button className="btn primary full-btn" disabled={!items.length}>
-          Send request
-        </button>
+        <div className="modal-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!items.length}>Send request</button></div>
       </form>
-    </Sheet>
+    </Dialog>
   );
 }

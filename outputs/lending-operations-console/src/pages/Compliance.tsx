@@ -2,9 +2,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
 import { Shell } from "../layout/Shell";
-import { Badge, KV, Notice, PageHead, SectionHead } from "../components/ui";
+import { Badge, Field, Notice, PageHead, SectionHead } from "../components/ui";
 import { DataTable, type Column } from "../components/DataTable";
-import { Sheet } from "../components/overlays";
+import { Drawer, DrawerSection } from "../components/overlays";
 import { riskTone, statusTone } from "../lib/tone";
 import { useDemo } from "../store";
 import type { ComplianceCase } from "../types";
@@ -30,15 +30,6 @@ export function Compliance() {
     { key: "status", header: "Status", sortValue: (row) => row.status, render: (row) => <Badge tone={statusTone(row.status)}>{row.status}</Badge> },
     { key: "owner", header: "Owner", render: (row) => row.owner },
     { key: "opened", header: "Opened", render: (row) => row.openedAt },
-    {
-      key: "action",
-      header: "",
-      render: (row) => (
-        <button className="btn small" onClick={() => setOpenId(row.id)}>
-          Review
-        </button>
-      ),
-    },
   ];
 
   const resolve = (status: "Cleared" | "Escalated") => {
@@ -66,29 +57,50 @@ export function Compliance() {
         </div>
         <section className="surface table-surface">
           <SectionHead title="Compliance cases" description="Open → Investigate → Clear or escalate → Close" padded />
-          <DataTable rows={state.complianceCases} columns={columns} rowKey={(row) => row.id} empty={{ title: "No compliance cases", text: "Nothing requires review right now." }} />
+          <DataTable
+            rows={state.complianceCases}
+            columns={columns}
+            rowKey={(row) => row.id}
+            onRowClick={(row) => setOpenId(row.id)}
+            empty={{ title: "No compliance cases", text: "Nothing requires review right now." }}
+          />
         </section>
       </div>
 
-      <Sheet open={Boolean(selected)} onClose={() => setOpenId(null)} title={"Compliance case " + (selected?.id ?? "")} description={selected ? selected.type + " · " + selected.customerName : ""}>
-        {selected && (
-          <>
+      {selected && (
+        <Drawer
+          open
+          onClose={() => setOpenId(null)}
+          title={selected.customerName}
+          description={selected.id + " · " + selected.type}
+          badge={<Badge tone={statusTone(selected.status)}>{selected.status}</Badge>}
+          size="md"
+          footer={
+            <>
+              <button className="btn danger" disabled={selected.status === "Escalated"} onClick={() => resolve("Escalated")}>
+                Escalate
+              </button>
+              <button className="btn primary" disabled={selected.status === "Cleared"} onClick={() => resolve("Cleared")}>
+                Clear case
+              </button>
+            </>
+          }
+        >
+          <DrawerSection title="Exception">
             <Notice title={selected.severity + "-severity exception"} text={selected.note} />
-            <div className="sheet-section">
-              <KV label="Opened" value={selected.openedAt} />
-              <KV label="Owner" value={selected.owner} />
-              <KV label="Status" value={selected.status} />
-              <KV label="Customer" value={selected.customerName} />
+          </DrawerSection>
+          <DrawerSection title="Case detail">
+            <div className="field-grid">
+              <Field label="Case" value={selected.id} />
+              <Field label="Opened" value={selected.openedAt} />
+              <Field label="Owner" value={selected.owner} />
+              <Field label="Severity" value={selected.severity} bad={selected.severity === "High"} />
+              <Field label="Status" value={selected.status} />
+              <Field label="Customer" value={selected.customerName} />
             </div>
-            <button className="btn primary full-btn" disabled={selected.status === "Cleared"} onClick={() => resolve("Cleared")}>
-              Clear case
-            </button>
-            <button className="btn danger full-btn" disabled={selected.status === "Escalated"} onClick={() => resolve("Escalated")}>
-              Escalate
-            </button>
-          </>
-        )}
-      </Sheet>
+          </DrawerSection>
+        </Drawer>
+      )}
     </Shell>
   );
 }

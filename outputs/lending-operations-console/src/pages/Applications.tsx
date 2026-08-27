@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Filter, MoreHorizontal, Search } from "lucide-react";
+import { Filter, Search, X } from "lucide-react";
 import { Shell } from "../layout/Shell";
 import { PageHead, Tabs } from "../components/ui";
 import { DataTable } from "../components/DataTable";
 import { applicationColumns } from "../components/columns";
-import { Popover } from "../components/overlays";
+import { ApplicationDrawer } from "../components/RecordDrawer";
+import { DropdownMenu, MenuItem, MenuLabel, MenuSeparator, Popover } from "../components/overlays";
 import { useDemo } from "../store";
 import type { ApplicationStage } from "../types";
 
@@ -27,6 +28,7 @@ export function Applications() {
   const [tab, setTab] = useState<string>("All");
   const [risk, setRisk] = useState("All");
   const [owner, setOwner] = useState("All");
+  const [peekId, setPeekId] = useState<string | null>(null);
 
   const rows = state.applications.filter((application) => {
     const customer = state.customers.find((item) => item.id === application.customerId);
@@ -44,22 +46,25 @@ export function Applications() {
       key: "menu",
       header: "",
       render: (row) => (
-        <Popover align="right" label="Row actions" trigger={<MoreHorizontal size={16} />}>
+        <DropdownMenu label={"Actions for " + row.id}>
           {(close) => (
             <>
-              <button className="popover-item" onClick={() => { close(); navigate("/applications/" + row.id); }}>View application</button>
-              <button className="popover-item" onClick={() => { close(); navigate("/customers/" + row.customerId); }}>View customer</button>
-              <button className="popover-item" onClick={() => { close(); toast.success("Assigned to Marie"); }}>Assign to me</button>
-              <button className="popover-item" onClick={() => { close(); navigate("/applications/" + row.id + "?tab=Documents"); }}>Request information</button>
-              <button className="popover-item" onClick={() => { close(); toast.success("Export queued"); }}>Export</button>
+              <MenuLabel>Application</MenuLabel>
+              <MenuItem onSelect={() => { close(); setPeekId(row.id); }}>Preview</MenuItem>
+              <MenuItem onSelect={() => { close(); navigate("/applications/" + row.id); }}>Open workspace</MenuItem>
+              <MenuItem onSelect={() => { close(); navigate("/customers/" + row.customerId); }}>View customer</MenuItem>
+              <MenuSeparator />
+              <MenuItem onSelect={() => { close(); toast.success("Assigned to Marie"); }}>Assign to me</MenuItem>
+              <MenuItem onSelect={() => { close(); navigate("/applications/" + row.id + "?tab=Documents"); }}>Request information</MenuItem>
+              <MenuItem onSelect={() => { close(); toast.success("Export queued"); }}>Export</MenuItem>
             </>
           )}
-        </Popover>
+        </DropdownMenu>
       ),
     },
   ]);
 
-  const activeFilters = [risk !== "All" && risk, owner !== "All" && owner].filter(Boolean).length;
+  const filters = [risk !== "All" && { label: "Risk: " + risk, clear: () => setRisk("All") }, owner !== "All" && { label: "Owner: " + owner, clear: () => setOwner("All") }].filter(Boolean) as { label: string; clear: () => void }[];
 
   return (
     <Shell>
@@ -67,53 +72,52 @@ export function Applications() {
         <PageHead
           title="Applications"
           description="Review and move applications through verification, credit, and approval."
-          actions={<button className="btn primary" onClick={() => toast("Intake form is out of scope for this prototype")}>New application</button>}
+          actions={<button className="btn primary" onClick={() => toast("Intake is handled in the borrower app, which is out of scope for this prototype")}>New application</button>}
         />
-        <div className="toolbar">
+
+        <Tabs items={TABS} active={tab} onClick={setTab} />
+
+        <div className="filter-bar">
           <div className="searchbox">
             <Search size={15} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search borrower or application ID…" aria-label="Search applications" />
           </div>
-          <Popover
-            label="Filters"
-            trigger={
-              <>
-                <Filter size={14} />
-                Filters
-                {activeFilters > 0 && <em className="filter-count">{activeFilters}</em>}
-              </>
-            }
-          >
-            <div className="popover-head">Risk band</div>
+          <Popover label="Filter applications" size="sm" trigger={<><Filter size={14} />Filter</>}>
+            <MenuLabel>Risk band</MenuLabel>
             {RISKS.map((item) => (
-              <button key={item} className={"popover-item " + (risk === item ? "selected" : "")} onClick={() => setRisk(item)}>
+              <button key={item} className={"menu-item " + (risk === item ? "selected" : "")} onClick={() => setRisk(item)}>
                 {item}
               </button>
             ))}
-            <div className="popover-head">Owner</div>
+            <MenuSeparator />
+            <MenuLabel>Owner</MenuLabel>
             {OWNERS.map((item) => (
-              <button key={item} className={"popover-item " + (owner === item ? "selected" : "")} onClick={() => setOwner(item)}>
+              <button key={item} className={"menu-item " + (owner === item ? "selected" : "")} onClick={() => setOwner(item)}>
                 {item}
               </button>
             ))}
           </Popover>
-          {activeFilters > 0 && (
-            <button className="btn small" onClick={() => { setRisk("All"); setOwner("All"); }}>
-              Clear filters
+          {filters.map((filter) => (
+            <button className="filter-chip" key={filter.label} onClick={filter.clear}>
+              {filter.label}
+              <X size={12} />
             </button>
-          )}
-          <span>{rows.length} results</span>
+          ))}
+          <span className="filter-count-label">{rows.length} of {state.applications.length}</span>
         </div>
-        <Tabs items={TABS} active={tab} onClick={setTab} />
+
         <section className="surface table-surface">
           <DataTable
             rows={rows}
             columns={columns}
             rowKey={(row) => row.id}
-            empty={{ title: "No applications match", text: query || activeFilters ? "Try clearing the search or filters." : "This queue is empty." }}
+            onRowClick={(row) => setPeekId(row.id)}
+            empty={{ title: "No applications match", text: query || filters.length ? "Try clearing the search or filters." : "This queue is empty." }}
           />
         </section>
       </div>
+
+      <ApplicationDrawer id={peekId} onClose={() => setPeekId(null)} />
     </Shell>
   );
 }

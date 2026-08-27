@@ -18,6 +18,16 @@ export function KV({ label, value, good, bad }: { label: string; value: string; 
   );
 }
 
+/** Read-only label/value pair used inside drawers, where density matters more than on a page. */
+export function Field({ label, value, good, bad }: { label: string; value: string; good?: boolean; bad?: boolean }) {
+  return (
+    <div className="field">
+      <span>{label}</span>
+      <strong className={good ? "good" : bad ? "bad" : ""}>{value}</strong>
+    </div>
+  );
+}
+
 export function Summary({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div>

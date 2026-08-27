@@ -1,8 +1,9 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
 import { Gauge } from "lucide-react";
 import { Shell } from "../layout/Shell";
 import { Badge, PageHead, SectionHead } from "../components/ui";
 import { DataTable, type Column } from "../components/DataTable";
+import { CollectionDrawer } from "../components/RecordDrawer";
 import { formatRwf } from "../lib/format";
 import { statusTone } from "../lib/tone";
 import { useDemo } from "../store";
@@ -43,18 +44,18 @@ function ageing(state: DemoState) {
 
 export function Collections() {
   const { state } = useDemo();
+  const [peekId, setPeekId] = useState<string | null>(null);
   const named = (id: string) => state.customers.find((customer) => customer.id === id)?.name ?? id;
   const buckets = ageing(state);
 
   const columns: Column<CollectionCase>[] = [
     { key: "borrower", header: "Borrower", sortValue: (row) => named(row.customerId), render: (row) => named(row.customerId) },
-    { key: "loan", header: "Loan", render: (row) => <Link to={"/loans/" + row.loanId}>{row.loanId}</Link> },
+    { key: "loan", header: "Loan", render: (row) => <span className="mono">{row.loanId}</span> },
     { key: "overdue", header: "Overdue", sortValue: (row) => row.daysOverdue, render: (row) => <Badge tone="danger">{row.daysOverdue} days</Badge> },
     { key: "amount", header: "Amount", align: "right", sortValue: (row) => row.amountOverdue, render: (row) => formatRwf(row.amountOverdue) },
     { key: "status", header: "Status", sortValue: (row) => row.status, render: (row) => <Badge tone={statusTone(row.status)}>{row.status}</Badge> },
     { key: "owner", header: "Owner", render: (row) => row.owner },
     { key: "next", header: "Next action", render: (row) => row.nextAction },
-    { key: "go", header: "", render: (row) => <Link className="btn small" to={"/collections/" + row.id}>Open</Link> },
   ];
 
   return (
@@ -97,9 +98,16 @@ export function Collections() {
 
         <section className="surface table-surface">
           <SectionHead title="Overdue cases" description="Ageing and ownership as of 27 Aug 2026" padded />
-          <DataTable rows={state.collections} columns={columns} rowKey={(row) => row.id} empty={{ title: "No overdue cases", text: "Every borrower is current." }} />
+          <DataTable
+            rows={state.collections}
+            columns={columns}
+            rowKey={(row) => row.id}
+            onRowClick={(row) => setPeekId(row.id)}
+            empty={{ title: "No overdue cases", text: "Every borrower is current." }}
+          />
         </section>
       </div>
+      <CollectionDrawer id={peekId} onClose={() => setPeekId(null)} />
     </Shell>
   );
 }

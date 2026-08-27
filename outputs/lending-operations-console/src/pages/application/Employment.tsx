@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowRight, Copy } from "lucide-react";
 import { Badge, KV, Notice, SectionHead } from "../../components/ui";
+import { DropdownMenu, MenuItem, MenuSeparator } from "../../components/overlays";
 import { formatRwf } from "../../lib/format";
 import { statusTone } from "../../lib/tone";
 import { useDemo } from "../../store";
@@ -83,12 +84,19 @@ export function Employment({ application, customer }: { application: Application
           <button className="btn primary" disabled={confirmed} onClick={() => setStatus("Verified", "Employment verified")}>
             Mark verified
           </button>
-          <button className="btn" disabled={application.employmentStatus === "Manual review"} onClick={() => setStatus("Manual review", "Sent for manual review")}>
-            Require manual review
-          </button>
-          <button className="btn danger" disabled={application.employmentStatus === "Failed"} onClick={() => setStatus("Failed", "Employment verification failed")}>
-            Fail verification
-          </button>
+          <DropdownMenu label="Other verification outcomes">
+            {(close) => (
+              <>
+                <MenuItem disabled={application.employmentStatus === "Manual review"} onSelect={() => { close(); setStatus("Manual review", "Sent for manual review"); }}>
+                  Require manual review
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem destructive disabled={application.employmentStatus === "Failed"} onSelect={() => { close(); setStatus("Failed", "Employment verification failed"); }}>
+                  Fail verification
+                </MenuItem>
+              </>
+            )}
+          </DropdownMenu>
         </div>
       </section>
     </div>
