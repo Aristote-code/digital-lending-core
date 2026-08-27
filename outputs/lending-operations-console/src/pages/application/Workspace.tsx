@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { MoreHorizontal } from "lucide-react";
 import { Shell } from "../../layout/Shell";
 import { Badge, Summary, Tabs } from "../../components/ui";
-import { Popover } from "../../components/overlays";
+import { DropdownMenu, MenuItem, MenuSeparator } from "../../components/overlays";
 import { formatRwf } from "../../lib/format";
 import { riskTone, statusTone } from "../../lib/tone";
 import { useDemo } from "../../store";
@@ -53,8 +53,7 @@ export function ApplicationWorkspace() {
               {application.id} · {application.product} · Submitted {application.submittedAt}
             </p>
           </div>
-          <Popover
-            align="right"
+          <DropdownMenu
             label="Application actions"
             trigger={
               <>
@@ -64,13 +63,14 @@ export function ApplicationWorkspace() {
           >
             {(close) => (
               <>
-                <button className="popover-item" onClick={() => { close(); setTab("Decision"); }}>Go to decision</button>
-                <button className="popover-item" onClick={() => { close(); toast.success("Assigned to Marie"); }}>Assign to me</button>
-                <button className="popover-item" onClick={() => { close(); toast.success("Application exported"); }}>Export application</button>
-                <button className="popover-item" onClick={() => { close(); toast("Escalated to Credit Manager"); }}>Escalate</button>
+                <MenuItem onSelect={() => { close(); setTab("Decision"); }}>Go to decision</MenuItem>
+                <MenuItem onSelect={() => { close(); toast.success("Assigned to Marie"); }}>Assign to me</MenuItem>
+                <MenuItem onSelect={() => { close(); toast.success("Application exported"); }}>Export application</MenuItem>
+                <MenuSeparator />
+                <MenuItem destructive onSelect={() => { close(); toast("Escalated to Credit Manager"); }}>Escalate</MenuItem>
               </>
             )}
-          </Popover>
+          </DropdownMenu>
         </div>
 
         <div className="summary">
