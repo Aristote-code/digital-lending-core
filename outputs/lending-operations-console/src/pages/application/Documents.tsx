@@ -3,6 +3,8 @@ import { toast } from "sonner";
 import { FileText, MoreHorizontal } from "lucide-react";
 import { Badge, KV, SectionHead, SkeletonBlock } from "../../components/ui";
 import { Dialog, DropdownMenu, MenuItem } from "../../components/overlays";
+import { Select } from "../../components/Select";
+import { Checkbox } from "../../components/Select";
 import { statusTone } from "../../lib/tone";
 import { useDemo } from "../../store";
 import type { Application, ApplicationDocument } from "../../types";
@@ -144,11 +146,7 @@ function RejectDialog({ open, onClose, document, onSubmit }: { open: boolean; on
       >
         <label>
           Reason
-          <select value={reason} onChange={(event) => setReason(event.target.value)}>
-            {REJECT_REASONS.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </select>
+          <Select value={reason} onChange={setReason} options={REJECT_REASONS} label="Rejection reason" />
         </label>
         <label>
           Comment
@@ -186,10 +184,9 @@ function RequestDialog({ open, onClose, applicationId }: { open: boolean; onClos
       >
         <div className="checkbox-list">
           {REQUESTABLE.map((item) => (
-            <label className="check-label" key={item}>
-              <input type="checkbox" checked={items.includes(item)} onChange={() => toggle(item)} />
+            <Checkbox key={item} checked={items.includes(item)} onChange={() => toggle(item)}>
               {item}
-            </label>
+            </Checkbox>
           ))}
         </div>
         <label>

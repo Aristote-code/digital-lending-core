@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, MoreHorizontal, X } from "lucide-react";
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -70,7 +71,10 @@ export function Drawer({ open, onClose, title, description, badge, footer, size 
   const titleId = useId();
   if (!open) return null;
 
-  return (
+  // Portalled to the body: an overlay rendered inside another overlay's stacking
+  // context paints underneath it, which is how a dialog raised from a drawer ends
+  // up behind the drawer that opened it.
+  return createPortal(
     <div className="backdrop drawer-drop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <aside ref={ref as React.RefObject<HTMLElement>} className={"drawer drawer-" + size} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className="drawer-head">
@@ -88,7 +92,8 @@ export function Drawer({ open, onClose, title, description, badge, footer, size 
         <div className="drawer-body">{children}</div>
         {footer && <footer className="drawer-foot">{footer}</footer>}
       </aside>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -122,8 +127,8 @@ export function Dialog({ title, description, open, onClose, children, size = "md
   const ref = useDialogBehavior(open, onClose);
   const titleId = useId();
   if (!open) return null;
-  return (
-    <div className="backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+  return createPortal(
+    <div className="backdrop dialog-drop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section ref={ref as React.RefObject<HTMLElement>} className={"modal modal-" + size} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header>
           <div>
@@ -136,7 +141,8 @@ export function Dialog({ title, description, open, onClose, children, size = "md
         </header>
         {children}
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }
 

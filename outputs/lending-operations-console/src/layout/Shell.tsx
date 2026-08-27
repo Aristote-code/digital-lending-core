@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowRight, Bell, ChevronRight, Command, Moon, PanelLeftClose, PanelLeftOpen, RefreshCcw, Search, Settings, Sun } from "lucide-react";
 import { Avatar } from "../components/ui";
+import { Select } from "../components/Select";
 import { Dialog, Popover } from "../components/overlays";
 import { navFor, queueCount, roles } from "../lib/roles";
 import { formatRwf } from "../lib/format";
@@ -177,17 +178,15 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="side-bottom">
           <label>
             <span>Demo role</span>
-            <select
+            <Select
               value={state.activeRole}
-              onChange={(event) => {
-                dispatch({ type: "SET_ROLE", role: event.target.value as StaffRole });
-                toast.success("Now viewing as " + event.target.value);
+              label="Demo role"
+              options={roles}
+              onChange={(role) => {
+                dispatch({ type: "SET_ROLE", role: role as StaffRole });
+                toast.success("Now viewing as " + role);
               }}
-            >
-              {roles.map((role) => (
-                <option key={role}>{role}</option>
-              ))}
-            </select>
+            />
           </label>
           <button
             className="nav-link"

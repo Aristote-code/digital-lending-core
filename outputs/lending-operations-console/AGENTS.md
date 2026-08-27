@@ -58,3 +58,33 @@ instructions when you can run it, and do not claim a UI change works on the basi
 
 When the user gives durable prototype-specific design feedback, preferences, or decisions, record
 them in this file.
+
+## Modality rules (durable)
+
+Supabase's Modality guidance: *"use dialogs for short, focused tasks and use
+sheets for longer forms or more detailed views."* In this prototype that means:
+
+- **Drawer = reading a record.** Every queue row opens a drawer rather than
+  navigating. Sizes follow Supabase's sheet scale (`lg` = 50% of viewport).
+  A drawer you have to scroll is worse than a wider one you do not.
+- **Dialog = taking a decision.** Approve, reject, record contact, promise to
+  pay, restructure, escalate, reject document, request information.
+- **Popover = disclosure.** Filters, row menus, risk-factor evidence.
+- **Card inside the drawer = supporting evidence** that informs the decision
+  without needing its own surface.
+- Drawers must be able to *act*, not just link away. A peek that forces a
+  navigation to do anything adds a step instead of removing one.
+- Overlays are portalled to `document.body`; an overlay nested inside another
+  overlay's stacking context paints underneath it.
+
+## Component fidelity notes
+
+Built against the values in `docs/design-audit.md`. Load-bearing ones:
+button `small` 34px / `tiny` 26px, radius 6px; primary is a soft brand fill with
+high-contrast ink, never saturated-green-on-white; badges are 9px uppercase
+pill; table headers are 12px **monospace** uppercase at 40px; tabs underline in
+`--foreground`, never brand; headings are regular weight, never bold.
+
+Native `<select>`, `<input type="date">`, and checkboxes render OS controls and
+can never match the system — use `components/Select.tsx` and
+`components/DatePicker.tsx` instead.

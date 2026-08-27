@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, ArrowRight, Building2, Check, CheckCircle2, Clock3, XCircle } from "lucide-react";
 import { Badge, KV } from "../components/ui";
+import { Checkbox, Select } from "../components/Select";
+import { DatePicker } from "../components/DatePicker";
 import { formatRwf } from "../lib/format";
 import { useDemo } from "../store";
 
@@ -32,6 +34,10 @@ export function HrVerification() {
   const { state, dispatch } = useDemo();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("intro");
+  const [employed, setEmployed] = useState("Yes");
+  const [contractType, setContractType] = useState("Permanent");
+  const [startDate, setStartDate] = useState("2024-01-12");
+  const [confirmed, setConfirmed] = useState(true);
 
   const application = state.applications.find((item) => item.employment.reference === token);
   const customer = application ? state.customers.find((item) => item.id === application.customerId) : undefined;
@@ -128,10 +134,7 @@ export function HrVerification() {
           >
             <label>
               Is {firstName} currently employed?
-              <select defaultValue="Yes">
-                <option>Yes</option>
-                <option>No</option>
-              </select>
+              <Select value={employed} onChange={setEmployed} options={["Yes", "No"]} label="Currently employed" />
             </label>
             <label>
               Position
@@ -140,24 +143,20 @@ export function HrVerification() {
             <div className="form-row">
               <label>
                 Start date
-                <input type="date" defaultValue="2024-01-12" />
+                <DatePicker value={startDate} onChange={setStartDate} label="Employment start date" />
               </label>
               <label>
                 Employment type
-                <select defaultValue={employment.employmentType}>
-                  <option>Permanent</option>
-                  <option>Contract</option>
-                  <option>Probation</option>
-                </select>
+                <Select value={contractType} onChange={setContractType} options={["Permanent", "Contract", "Probation"]} label="Employment type" />
               </label>
             </div>
             <label>
               Gross monthly salary
               <input defaultValue={formatRwf(employment.declared)} />
             </label>
-            <label className="check-label">
-              <input type="checkbox" required defaultChecked />I confirm this information is accurate.
-            </label>
+            <Checkbox checked={confirmed} onChange={setConfirmed} required>
+              I confirm this information is accurate.
+            </Checkbox>
             <button className="btn primary full-btn">Submit verification</button>
           </form>
         </section>

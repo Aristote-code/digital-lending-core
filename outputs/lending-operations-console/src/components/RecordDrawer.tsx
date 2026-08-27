@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { ArrowRight, Building2, ClipboardCheck, Landmark, WalletCards } from "lucide-react";
-import { Drawer, DrawerSection } from "./overlays";
-import { Badge, Field, Timeline } from "./ui";
+import { Drawer, DrawerSection, DropdownMenu, MenuItem, MenuSeparator, Tooltip } from "./overlays";
+import { Badge, Field, Notice, Timeline } from "./ui";
+import { ContactDialog, DecisionDialog, EscalateDialog, PromiseDialog, RestructureDialog, type Outcome } from "./actions";
 import { dti, formatRwf } from "../lib/format";
 import { riskTone, statusTone } from "../lib/tone";
 import { useDemo } from "../store";
@@ -15,6 +18,7 @@ import { useDemo } from "../store";
 export function ApplicationDrawer({ id, onClose }: { id: string | null; onClose: () => void }) {
   const { state } = useDemo();
   const navigate = useNavigate();
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const application = state.applications.find((item) => item.id === id);
   const customer = state.customers.find((item) => item.id === application?.customerId);
   if (!application || !customer) return null;
@@ -28,6 +32,19 @@ export function ApplicationDrawer({ id, onClose }: { id: string | null; onClose:
     { icon: Landmark, label: "Credit bureau", status: bureau.status },
   ];
 
+  const decided = application.decision !== "Pending";
+  const blocked = application.employmentStatus !== "Verified";
+  const highRisk = application.risk === "High";
+  // A decision can be taken here unless something upstream is genuinely missing;
+  // when it is, the drawer says why and sends you to the tab that resolves it.
+  const canDecide = !decided && !blocked;
+
+  const approveButton = (
+    <button className="btn primary" disabled={!canDecide || highRisk} onClick={() => setOutcome("Approved")}>
+      Approve {formatRwf(application.recommended, true)}
+    </button>
+  );
+
   return (
     <Drawer
       open
@@ -40,10 +57,40 @@ export function ApplicationDrawer({ id, onClose }: { id: string | null; onClose:
           <button className="btn" onClick={() => navigate("/applications/" + application.id)}>
             Open full workspace
           </button>
-          <button className="btn primary" onClick={() => navigate("/applications/" + application.id + "?tab=" + (application.risk === "High" ? "Credit" : "Decision"))}>
-            {application.risk === "High" ? "Review red flags" : "Open credit decision"}
-            <ArrowRight size={14} />
-          </button>
+          {decided ? (
+            <button className="btn primary" onClick={() => navigate("/applications/" + application.id + "?tab=Activity")}>
+              View decision
+              <ArrowRight size={14} />
+            </button>
+          ) : highRisk ? (
+            <>
+              <DropdownMenu label="Other outcomes">
+                {(close) => (
+                  <>
+                    <MenuItem onSelect={() => { close(); navigate("/applications/" + application.id + "?tab=Credit"); }}>Review red flags</MenuItem>
+                    <MenuItem onSelect={() => { close(); setOutcome("Manual review"); }}>Send for manual review</MenuItem>
+                  </>
+                )}
+              </DropdownMenu>
+              <button className="btn danger-solid" onClick={() => setOutcome("Rejected")}>
+                Reject application
+              </button>
+            </>
+          ) : (
+            <>
+              <DropdownMenu label="Other outcomes">
+                {(close) => (
+                  <>
+                    <MenuItem disabled={!canDecide} onSelect={() => { close(); setOutcome("Approved with conditions"); }}>Approve with conditions</MenuItem>
+                    <MenuItem onSelect={() => { close(); setOutcome("Manual review"); }}>Send for manual review</MenuItem>
+                    <MenuSeparator />
+                    <MenuItem destructive onSelect={() => { close(); setOutcome("Rejected"); }}>Reject application</MenuItem>
+                  </>
+                )}
+              </DropdownMenu>
+              {blocked ? <Tooltip text="Employer verification must be completed first">{approveButton}</Tooltip> : approveButton}
+            </>
+          )}
         </>
       }
     >
@@ -92,7 +139,25 @@ export function ApplicationDrawer({ id, onClose }: { id: string | null; onClose:
             </div>
           ))}
         </div>
+        {blocked && !decided && (
+          <button className="btn full-btn" onClick={() => navigate("/applications/" + application.id + "?tab=Employment")}>
+            Resolve employer verification
+            <ArrowRight size={14} />
+          </button>
+        )}
       </DrawerSection>
+
+      {decided && (
+        <DrawerSection title="Decision">
+          <Notice
+            good={application.decision !== "Rejected"}
+            title={application.decision}
+            text={application.decisionReason}
+          />
+        </DrawerSection>
+      )}
+
+      <DecisionDialog outcome={outcome} onClose={() => setOutcome(null)} application={application} />
     </Drawer>
   );
 }
@@ -165,9 +230,15 @@ export function LoanDrawer({ id, onClose }: { id: string | null; onClose: () => 
 export function CollectionDrawer({ id, onClose }: { id: string | null; onClose: () => void }) {
   const { state } = useDemo();
   const navigate = useNavigate();
+  const [contactOpen, setContactOpen] = useState(false);
+  const [promiseOpen, setPromiseOpen] = useState(false);
+  const [restructureOpen, setRestructureOpen] = useState(false);
+  const [escalateOpen, setEscalateOpen] = useState(false);
+
   const item = state.collections.find((entry) => entry.id === id);
   const customer = state.customers.find((entry) => entry.id === item?.customerId);
-  if (!item || !customer) return null;
+  const loan = state.loans.find((entry) => entry.id === item?.loanId);
+  if (!item || !customer || !loan) return null;
 
   return (
     <Drawer
@@ -178,12 +249,25 @@ export function CollectionDrawer({ id, onClose }: { id: string | null; onClose: 
       badge={<Badge tone={statusTone(item.status)}>{item.status}</Badge>}
       footer={
         <>
-          <button className="btn" onClick={() => navigate("/loans/" + item.loanId)}>
-            View loan
+          <button className="btn" onClick={() => navigate("/collections/" + item.id)}>
+            Open full case
           </button>
-          <button className="btn primary" onClick={() => navigate("/collections/" + item.id)}>
-            Open case
-            <ArrowRight size={14} />
+          <DropdownMenu label="More case actions">
+            {(close) => (
+              <>
+                <MenuItem onSelect={() => { close(); setPromiseOpen(true); }}>Promise to pay</MenuItem>
+                <MenuItem onSelect={() => { close(); toast.success("SMS reminder sent to " + customer.phone); }}>Send reminder</MenuItem>
+                <MenuItem disabled={item.status === "Restructured"} onSelect={() => { close(); setRestructureOpen(true); }}>Restructure loan</MenuItem>
+                <MenuItem onSelect={() => { close(); navigate("/loans/" + item.loanId); }}>View loan</MenuItem>
+                <MenuSeparator />
+                <MenuItem destructive disabled={item.status === "Escalated"} onSelect={() => { close(); setEscalateOpen(true); }}>
+                  Escalate to compliance
+                </MenuItem>
+              </>
+            )}
+          </DropdownMenu>
+          <button className="btn primary" onClick={() => setContactOpen(true)}>
+            Record contact
           </button>
         </>
       }
@@ -209,7 +293,18 @@ export function CollectionDrawer({ id, onClose }: { id: string | null; onClose: 
             <Timeline key={event.id} title={event.type} text={event.note + " · " + event.actor} time={event.at} />
           ))}
         </div>
+        {item.events.length > 4 && (
+          <button className="btn full-btn" onClick={() => navigate("/collections/" + item.id)}>
+            View all {item.events.length} events
+            <ArrowRight size={14} />
+          </button>
+        )}
       </DrawerSection>
+
+      <ContactDialog open={contactOpen} onClose={() => setContactOpen(false)} item={item} phone={customer.phone} name={customer.name} />
+      <PromiseDialog open={promiseOpen} onClose={() => setPromiseOpen(false)} item={item} />
+      <RestructureDialog open={restructureOpen} onClose={() => setRestructureOpen(false)} item={item} loan={loan} />
+      <EscalateDialog open={escalateOpen} onClose={() => setEscalateOpen(false)} item={item} name={customer.name} />
     </Drawer>
   );
 }
