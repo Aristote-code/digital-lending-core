@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, ShieldAlert, XCircle } from "lucide-react";
 import { Shell } from "../layout/Shell";
 import { Badge, Field, PageHead, Tabs } from "../components/ui";
 import { DataTable, type Column } from "../components/DataTable";
 import { ConfirmDialog, Drawer, DrawerSection } from "../components/overlays";
 import { formatRwf } from "../lib/format";
 import { statusTone } from "../lib/tone";
+import { can, denialReason } from "../lib/roles";
 import { useDemo } from "../store";
 import type { Loan } from "../types";
 
@@ -22,6 +23,9 @@ export function Disbursements() {
 
   const selected = state.loans.find((item) => item.id === selectedId) ?? null;
   const rows = state.loans.filter((loan) => (tab === "Ready" ? loan.disbursementStatus === "Ready" : loan.disbursementStatus === "Completed"));
+  const permitted = can(state.activeRole, "disburse");
+  // s21: security must be registered and perfected before proceeds are released.
+  const unperfected = Boolean(selected?.collateral.some((item) => !item.registered));
   const named = (id: string) => state.customers.find((customer) => customer.id === id)?.name ?? id;
 
   useEffect(() => {
@@ -72,11 +76,23 @@ export function Disbursements() {
           badge={<Badge tone={statusTone(selected.disbursementStatus)}>{selected.disbursementStatus}</Badge>}
           size="md"
           footer={
-            <button className="btn primary" disabled={selected.disbursementStatus === "Completed"} onClick={() => setConfirming(true)}>
-              {selected.disbursementStatus === "Completed" ? "Already disbursed" : "Approve disbursement"}
+            <button className="btn primary" disabled={!permitted || selected.disbursementStatus === "Completed" || unperfected} onClick={() => setConfirming(true)}>
+              {selected.disbursementStatus === "Completed" ? "Already disbursed" : "Release disbursement"}
             </button>
           }
         >
+          {(!permitted || unperfected) && (
+            <DrawerSection flush>
+              <div className="gate">
+                <ShieldAlert size={16} />
+                <span>
+                  <strong>Release is blocked</strong>
+                  {!permitted ? denialReason(state.activeRole, "disburse") : "Security pledged against this facility is not yet registered or perfected. Policy §21 requires perfection before release."}
+                </span>
+              </div>
+            </DrawerSection>
+          )}
+
           <DrawerSection title="Pre-disbursement checks">
             <div className="checklist">
               {CHECKLIST.map((item) => (
@@ -85,6 +101,10 @@ export function Disbursements() {
                   {item}
                 </p>
               ))}
+              <p className={unperfected ? "unmet" : ""}>
+                {unperfected ? <XCircle size={15} /> : <CheckCircle2 size={15} />}
+                Security registered and perfected
+              </p>
             </div>
           </DrawerSection>
           <DrawerSection title="Payment">

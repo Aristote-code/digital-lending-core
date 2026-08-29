@@ -13,6 +13,9 @@ import { Disbursements } from "./pages/Disbursements";
 import { Collections } from "./pages/Collections";
 import { CollectionCase } from "./pages/CollectionCase";
 import { Compliance } from "./pages/Compliance";
+import { Exceptions } from "./pages/Exceptions";
+import { Complaints } from "./pages/Complaints";
+import { Policy } from "./pages/Policy";
 import { Executive } from "./pages/Executive";
 import { HrVerification } from "./pages/HrVerification";
 
@@ -34,6 +37,9 @@ export function App() {
           <Route path="/collections" element={<Collections />} />
           <Route path="/collections/:id" element={<CollectionCase />} />
           <Route path="/compliance" element={<Compliance />} />
+        <Route path="/exceptions" element={<Exceptions />} />
+        <Route path="/complaints" element={<Complaints />} />
+        <Route path="/policy" element={<Policy />} />
           <Route path="/executive" element={<Executive />} />
           <Route path="/verify-employment/:token" element={<HrVerification />} />
           <Route path="*" element={<Navigate to="/home" replace />} />

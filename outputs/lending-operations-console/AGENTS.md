@@ -88,3 +88,29 @@ pill; table headers are 12px **monospace** uppercase at 40px; tabs underline in
 Native `<select>`, `<input type="date">`, and checkboxes render OS controls and
 can never match the system — use `components/Select.tsx` and
 `components/DatePicker.tsx` instead.
+
+## Credit policy controls (durable)
+
+Built against the BNR credit policy for a non-deposit-taking institution. The
+policy marks its own thresholds as illustrative and requires calibration to the
+institution's capital base and licence category, so **nothing is hard-coded into
+a screen** — everything reads from `state.policy` (`lib/policy.ts`,
+`DEFAULT_POLICY`) and is editable at `/policy`. Changing core capital
+recalculates every approval tier.
+
+- **Separation of duties (§4.6, §38, §46).** `lib/roles.ts` holds the permission
+  matrix. Navigation is not a control — gate the action, and render it disabled
+  *with its reason* so the separation is legible.
+- **Approval gate (`approvalGate`)** composes, in order: role permission →
+  originator identity → related party → delegated authority → evidence.
+  No officer may approve a file they originated.
+- **Classification (§ Reg 12/2017).** Normal 0–29 / Watch 30–89 / Substandard
+  90–179 / Doubtful 180–364 / Loss 365+, provisions 1/3/20/50/100%.
+  Substandard and worse are NPLs.
+- **Exceptions (§36).** Approving outside policy writes to the register
+  automatically — see `breaches()` and the DECIDE reducer branch.
+- **Restructuring (§27).** Twice over a facility's life, three months seasoning
+  before upgrade.
+
+`Infinity` cannot be persisted through JSON — the unbounded authority tier is
+modelled as `null`, not `Infinity`.

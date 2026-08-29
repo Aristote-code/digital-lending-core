@@ -9,6 +9,90 @@ export type DisbursementStatus = "Not ready" | "Ready" | "Processing" | "Complet
 export type CollectionCaseStatus = "Open" | "Promise to pay" | "Escalated" | "Restructured" | "Closed";
 export type ComplianceCaseStatus = "Open" | "Investigate" | "Escalated" | "Cleared" | "Closed";
 
+/* --- BNR Regulation 12/2017 asset classification --- */
+export type AssetClass = "Normal" | "Watch" | "Substandard" | "Doubtful" | "Loss";
+/* --- Credit Policy s32 internal rating --- */
+export type CreditGrade = "A" | "B" | "C" | "D" | "E" | "F";
+export type CollateralType = "Real estate" | "Motor vehicle" | "Machinery" | "Unsecured";
+export type RelatedPartyType = "None" | "Director" | "Shareholder" | "Staff" | "Connected party";
+/* --- Credit Policy s16 delegated approval authority --- */
+export type AuthorityLevel = "Credit Officer" | "Credit Manager" | "Board Credit Committee" | "Full Board";
+
+export interface Collateral {
+  id: string;
+  type: CollateralType;
+  description: string;
+  owner: string;
+  marketValue: number;
+  forcedSaleValue: number;
+  valuedAt: string;
+  insured: boolean;
+  /** Security registered/perfected — a precondition of disbursement under s21. */
+  registered: boolean;
+  enforceable: boolean;
+}
+
+export interface Guarantor {
+  id: string;
+  name: string;
+  relationship: string;
+  nationalId: string;
+  monthlyIncome: number;
+  documented: boolean;
+  acknowledged: boolean;
+}
+
+/** s36: every deviation from policy is justified, approved and registered. */
+export interface PolicyException {
+  id: string;
+  entityId: string;
+  entityLabel: string;
+  type: string;
+  detail: string;
+  justification: string;
+  raisedBy: string;
+  approvedBy?: string;
+  at: string;
+  status: "Open" | "Approved" | "Declined";
+}
+
+/** s44: borrowers must have access to a complaints mechanism. */
+export interface Complaint {
+  id: string;
+  customerId: string;
+  customerName: string;
+  channel: "Phone" | "Email" | "Branch" | "SMS";
+  subject: string;
+  detail: string;
+  status: "Received" | "Acknowledged" | "Investigating" | "Resolved";
+  receivedAt: string;
+  resolvedAt?: string;
+  resolution?: string;
+  owner: string;
+}
+
+/**
+ * Board-set policy parameters. The source policy marks its own thresholds as
+ * illustrative and requires them to be calibrated to the institution's capital
+ * base and licence category, so nothing here is hard-coded into the screens.
+ */
+export interface PolicyParameters {
+  institution: string;
+  licenceCategory: "Category I" | "Category II";
+  coreCapital: number;
+  minimumCapital: number;
+  /** null means no ceiling — Infinity does not survive JSON serialisation. */
+  authorityTiers: { level: AuthorityLevel; maxPctOfCapital: number | null }[];
+  ltvCaps: { type: CollateralType; max: number }[];
+  dscrFloor: number;
+  provisionRates: { class: AssetClass; rate: number; from: number; to: number | null }[];
+  maxRestructures: number;
+  restructureSeasoningMonths: number;
+  singleBorrowerLimitPct: number;
+  relatedPartyLimitPct: number;
+  sectorLimitPct: number;
+}
+
 export interface KycDetail {
   dob: string;
   nationality: string;
@@ -37,6 +121,10 @@ export interface Customer {
   status: "Active" | "In review" | "Restricted";
   assigned: string;
   kycDetail: KycDetail;
+  /** s18/s35: related parties cannot be approved by an interested officer. */
+  relatedParty: RelatedPartyType;
+  sector: string;
+  district: string;
 }
 
 export interface ApplicationDocument {
@@ -120,6 +208,15 @@ export interface Application {
   concerns: string[];
   redFlags: string[];
   requestedInfo?: string[];
+  grade: CreditGrade;
+  /** s11: repayment capacity outranks collateral. */
+  dscr: number;
+  collateral: Collateral[];
+  guarantors: Guarantor[];
+  /** s20/s44: key facts issued and acknowledged before acceptance. */
+  disclosureAcceptedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
 }
 
 export interface ScheduleRow {
@@ -162,6 +259,16 @@ export interface Loan {
   schedule: ScheduleRow[];
   transactions: Transaction[];
   restructuredFrom?: { term: number; installment: number; at: string };
+  daysPastDue: number;
+  sector: string;
+  collateral: Collateral[];
+  restructureCount: number;
+  lastRestructuredAt?: string;
+  /** Months of satisfactory performance since the last restructuring (s27 seasoning). */
+  monthsSinceRestructure?: number;
+  writtenOffAt?: string;
+  writeOffReason?: string;
+  recovered: number;
 }
 
 export interface CollectionEvent {
@@ -201,7 +308,7 @@ export interface ComplianceCase {
 
 export interface AuditEvent {
   id: string;
-  entityType: "application" | "loan" | "document" | "employment" | "collection" | "compliance";
+  entityType: "application" | "loan" | "document" | "employment" | "collection" | "compliance" | "exception" | "complaint" | "policy";
   entityId: string;
   action: string;
   actor: string;
@@ -230,4 +337,7 @@ export interface DemoState {
   complianceCases: ComplianceCase[];
   employers: Employer[];
   audit: AuditEvent[];
+  policy: PolicyParameters;
+  exceptions: PolicyException[];
+  complaints: Complaint[];
 }

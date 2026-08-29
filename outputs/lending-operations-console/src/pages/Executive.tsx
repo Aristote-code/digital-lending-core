@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Clock3, RefreshCcw } from "lucide-react";
 import { Shell } from "../layout/Shell";
 import { Badge, Notice, PageHead, SectionHead } from "../components/ui";
 import { formatRwf } from "../lib/format";
+import { classOf, classTone, concentrations, kris, provisionFor } from "../lib/policy";
 import { useDemo } from "../store";
 import type { DemoState } from "../types";
 
@@ -51,6 +52,17 @@ function riskMix(state: DemoState) {
 export function Executive() {
   const { state } = useDemo();
   const value = metrics(state);
+  const indicators = kris(state);
+  const limits = concentrations(state);
+  const classes = (["Normal", "Watch", "Substandard", "Doubtful", "Loss"] as const).map((assetClass) => {
+    const loans = state.loans.filter((loan) => !loan.writtenOffAt && classOf(loan, state.policy) === assetClass);
+    return {
+      assetClass,
+      count: loans.length,
+      exposure: loans.reduce((sum, loan) => sum + loan.outstanding, 0),
+      provision: loans.reduce((sum, loan) => sum + provisionFor(loan, state.policy), 0),
+    };
+  });
   const mix = riskMix(state);
   const johnActive = state.loans.find((loan) => loan.id === "LN-00045")?.status === "Active";
   const decisionsToday = state.audit.filter((event) => event.action.startsWith("Application ")).length;
@@ -88,8 +100,8 @@ export function Executive() {
           </div>
           <div>
             <span>PAR 30</span>
-            <strong>{value.par30}</strong>
-            <small className="warn">Watchlist</small>
+            <strong>{indicators.par30.toFixed(1)}%</strong>
+            <small className="warn">Overdue beyond 30 days</small>
           </div>
           <div>
             <span>Interest income</span>
@@ -101,9 +113,66 @@ export function Executive() {
             <strong>{value.borrowers}</strong>
             <small>{state.customers.length} total</small>
           </div>
+          <div>
+            <span>NPL ratio</span>
+            <strong>{indicators.nplRatio.toFixed(1)}%</strong>
+            <small>{formatRwf(indicators.npl, true)} substandard or worse</small>
+          </div>
+          <div>
+            <span>Provisions held</span>
+            <strong>{formatRwf(indicators.provisions, true)}</strong>
+            <small>{indicators.provisionCoverage.toFixed(0)}% NPL coverage</small>
+          </div>
+          <div>
+            <span>Write-off ratio</span>
+            <strong>{indicators.writeOffRatio.toFixed(1)}%</strong>
+            <small>{indicators.recoveryRate.toFixed(0)}% recovered after write-off</small>
+          </div>
         </div>
 
         {johnActive && <Notice good title="Portfolio updated" text="John Doe’s RWF 2.5M loan is now active and included in these figures." />}
+
+        <div className="content-grid" style={{ marginTop: 16 }}>
+          <section className="surface padded">
+            <SectionHead title="Asset classification" description="BNR Regulation 12/2017 · exposure and minimum provision by class" />
+            <div className="policy-rows">
+              {classes.map((row) => (
+                <div key={row.assetClass}>
+                  <span>
+                    <Badge tone={classTone(row.assetClass)}>{row.assetClass}</Badge>
+                  </span>
+                  <em>{row.count} {row.count === 1 ? "facility" : "facilities"} · {formatRwf(row.exposure, true)}</em>
+                  <strong>{formatRwf(row.provision, true)}</strong>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="surface padded">
+            <SectionHead title="Concentration" description="Credit Policy §33 · exposure against Board limits" />
+            <div className="policy-rows">
+              <div>
+                <span>{limits.relatedParty.label}</span>
+                <em>limit {limits.relatedParty.limitPct}% of capital</em>
+                <strong className={limits.relatedParty.breached ? "bad" : ""}>{limits.relatedParty.pct.toFixed(1)}%</strong>
+              </div>
+              {limits.borrowers.slice(0, 3).map((row) => (
+                <div key={row.label}>
+                  <span>{row.label}</span>
+                  <em>limit {row.limitPct}% of capital</em>
+                  <strong className={row.breached ? "bad" : ""}>{row.pct.toFixed(1)}%</strong>
+                </div>
+              ))}
+              {limits.sectors.slice(0, 3).map((row) => (
+                <div key={row.label}>
+                  <span>{row.label} sector</span>
+                  <em>limit {row.limitPct}% of portfolio</em>
+                  <strong className={row.breached ? "bad" : ""}>{row.pct.toFixed(1)}%</strong>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
 
         <div className="dash">
           <section className="surface chart">

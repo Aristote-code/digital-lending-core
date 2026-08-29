@@ -6,6 +6,7 @@ import { DataTable, type Column } from "../components/DataTable";
 import { LoanDrawer } from "../components/RecordDrawer";
 import { formatRwf } from "../lib/format";
 import { riskTone, statusTone } from "../lib/tone";
+import { classOf, classTone, provisionFor } from "../lib/policy";
 import { useDemo } from "../store";
 import type { Loan, LoanStatus } from "../types";
 
@@ -33,6 +34,9 @@ export function Loans() {
     { key: "principal", header: "Principal", align: "right", sortValue: (row) => row.principal, render: (row) => formatRwf(row.principal) },
     { key: "outstanding", header: "Outstanding", align: "right", sortValue: (row) => row.outstanding, render: (row) => formatRwf(row.outstanding) },
     { key: "next", header: "Next payment", render: (row) => formatRwf(row.nextPayment) + " · " + row.nextDue },
+    { key: "dpd", header: "DPD", align: "right", sortValue: (row) => row.daysPastDue, render: (row) => (row.daysPastDue > 0 ? row.daysPastDue : "—") },
+    { key: "class", header: "Classification", sortValue: (row) => row.daysPastDue, render: (row) => <Badge tone={classTone(classOf(row, state.policy))}>{classOf(row, state.policy)}</Badge> },
+    { key: "provision", header: "Provision", align: "right", sortValue: (row) => provisionFor(row, state.policy), render: (row) => formatRwf(provisionFor(row, state.policy)) },
     { key: "risk", header: "Risk", sortValue: (row) => row.risk, render: (row) => <Badge tone={riskTone(row.risk)}>{row.risk}</Badge> },
     { key: "status", header: "Status", sortValue: (row) => row.status, render: (row) => <Badge tone={statusTone(row.status)}>{row.status}</Badge> },
     { key: "officer", header: "Officer", sortValue: (row) => row.officer, render: (row) => row.officer },

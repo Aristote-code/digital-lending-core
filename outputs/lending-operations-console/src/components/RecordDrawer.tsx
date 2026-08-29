@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowRight, Building2, ClipboardCheck, Landmark, WalletCards } from "lucide-react";
+import { ArrowRight, Building2, ClipboardCheck, Landmark, ShieldAlert, UserCheck, WalletCards } from "lucide-react";
 import { Drawer, DrawerSection, DropdownMenu, MenuItem, MenuSeparator, Tooltip } from "./overlays";
 import { Badge, Field, Notice, Timeline } from "./ui";
 import { ContactDialog, DecisionDialog, EscalateDialog, PromiseDialog, RestructureDialog, type Outcome } from "./actions";
 import { dti, formatRwf } from "../lib/format";
+import { approvalGate, breaches, classOf, classTone, dscrOf, GRADE_LABEL, gradeTone, ltvCapFor, ltvOf, provisionFor } from "../lib/policy";
+import { can, denialReason, officers } from "../lib/roles";
 import { riskTone, statusTone } from "../lib/tone";
 import { useDemo } from "../store";
 
@@ -33,11 +35,25 @@ export function ApplicationDrawer({ id, onClose }: { id: string | null; onClose:
   ];
 
   const decided = application.decision !== "Pending";
-  const blocked = application.employmentStatus !== "Verified";
+  const unverified = application.employmentStatus !== "Verified";
   const highRisk = application.risk === "High";
-  // A decision can be taken here unless something upstream is genuinely missing;
-  // when it is, the drawer says why and sends you to the tab that resolves it.
-  const canDecide = !decided && !blocked;
+
+  // Every control the policy requires, composed: separation of duties, delegated
+  // authority, conflict of interest, then the evidence gate.
+  const role = state.activeRole;
+  const permitted = can(role, "approve");
+  const gate = approvalGate(application, customer, role, officers[role], state.policy);
+  const policyBreaches = breaches(application, state.policy);
+
+  const blockedReason = !permitted
+    ? denialReason(role, "approve")
+    : !gate.allowed
+      ? gate.reason
+      : unverified
+        ? "Employer verification must be completed before a credit decision."
+        : undefined;
+
+  const canDecide = !decided && !blockedReason;
 
   const approveButton = (
     <button className="btn primary" disabled={!canDecide || highRisk} onClick={() => setOutcome("Approved")}>
@@ -72,7 +88,7 @@ export function ApplicationDrawer({ id, onClose }: { id: string | null; onClose:
                   </>
                 )}
               </DropdownMenu>
-              <button className="btn danger-solid" onClick={() => setOutcome("Rejected")}>
+              <button className="btn danger-solid" disabled={!permitted} onClick={() => setOutcome("Rejected")}>
                 Reject application
               </button>
             </>
@@ -82,26 +98,38 @@ export function ApplicationDrawer({ id, onClose }: { id: string | null; onClose:
                 {(close) => (
                   <>
                     <MenuItem disabled={!canDecide} onSelect={() => { close(); setOutcome("Approved with conditions"); }}>Approve with conditions</MenuItem>
-                    <MenuItem onSelect={() => { close(); setOutcome("Manual review"); }}>Send for manual review</MenuItem>
+                    <MenuItem disabled={!permitted} onSelect={() => { close(); setOutcome("Manual review"); }}>Send for manual review</MenuItem>
                     <MenuSeparator />
-                    <MenuItem destructive onSelect={() => { close(); setOutcome("Rejected"); }}>Reject application</MenuItem>
+                    <MenuItem destructive disabled={!permitted} onSelect={() => { close(); setOutcome("Rejected"); }}>Reject application</MenuItem>
                   </>
                 )}
               </DropdownMenu>
-              {blocked ? <Tooltip text="Employer verification must be completed first">{approveButton}</Tooltip> : approveButton}
+              {blockedReason ? <Tooltip text={blockedReason}>{approveButton}</Tooltip> : approveButton}
             </>
           )}
         </>
       }
     >
+      {blockedReason && !decided && (
+        <DrawerSection flush>
+          <div className="gate">
+            <ShieldAlert size={16} />
+            <span>
+              <strong>You cannot approve this file</strong>
+              {blockedReason}
+            </span>
+          </div>
+        </DrawerSection>
+      )}
+
       <DrawerSection title="Request">
         <div className="field-grid">
           <Field label="Requested" value={formatRwf(application.requested)} />
           <Field label="Recommended" value={application.recommended ? formatRwf(application.recommended) : "No offer"} />
           <Field label="Term" value={application.term + " months"} />
           <Field label="Purpose" value={application.purpose} />
-          <Field label="Assigned" value={application.assigned} />
-          <Field label="Required approver" value={application.approver} />
+          <Field label="Originated by" value={application.assigned} />
+          <Field label="Approval authority" value={gate.requiredAuthority} bad={gate.requiredAuthority === "Full Board"} />
         </div>
       </DrawerSection>
 
@@ -117,6 +145,8 @@ export function ApplicationDrawer({ id, onClose }: { id: string | null; onClose:
           <Badge tone={riskTone(application.risk)}>{application.risk} Risk</Badge>
         </div>
         <div className="field-grid">
+          <Field label="Internal grade" value={application.grade + " · " + GRADE_LABEL[application.grade].split(" · ")[0]} bad={gradeTone(application.grade) === "danger"} good={gradeTone(application.grade) === "success"} />
+          <Field label="DSCR" value={application.dscr.toFixed(2) + "x (floor " + state.policy.dscrFloor.toFixed(2) + "x)"} bad={application.dscr < state.policy.dscrFloor} good={application.dscr >= state.policy.dscrFloor} />
           <Field label="Debt-to-income" value={dti(customer.monthlyObligations, customer.monthlyIncome) + "%"} bad={dti(customer.monthlyObligations, customer.monthlyIncome) > 50} />
           <Field label="Monthly income" value={formatRwf(customer.monthlyIncome)} />
         </div>
@@ -139,13 +169,55 @@ export function ApplicationDrawer({ id, onClose }: { id: string | null; onClose:
             </div>
           ))}
         </div>
-        {blocked && !decided && (
+        {unverified && !decided && (
           <button className="btn full-btn" onClick={() => navigate("/applications/" + application.id + "?tab=Employment")}>
             Resolve employer verification
             <ArrowRight size={14} />
           </button>
         )}
       </DrawerSection>
+
+      <DrawerSection title="Security">
+        {application.collateral.length ? (
+          <>
+            <div className="mini-table">
+              {application.collateral.map((item) => (
+                <div key={item.id}>
+                  <span>{item.type} · {item.description}</span>
+                  <strong>{formatRwf(item.forcedSaleValue)}</strong>
+                  <Badge tone={item.registered ? "success" : "warning"}>{item.registered ? "Perfected" : "Not registered"}</Badge>
+                </div>
+              ))}
+            </div>
+            <div className="field-grid" style={{ marginTop: 12 }}>
+              <Field label="Loan-to-value" value={(ltvOf(application.requested, application.collateral) ?? 0) + "%"} bad={(ltvOf(application.requested, application.collateral) ?? 0) > (ltvCapFor(application.collateral, state.policy) ?? 100)} />
+              <Field label="Policy cap" value={(ltvCapFor(application.collateral, state.policy) ?? 0) + "%"} />
+            </div>
+          </>
+        ) : (
+          <p className="drawer-empty">Unsecured. Repayment rests on verified cash flow{application.guarantors.length ? " and a guarantee" : ""}.</p>
+        )}
+        {application.guarantors.map((guarantor) => (
+          <div className="guarantor" key={guarantor.id}>
+            <UserCheck size={15} />
+            <span>
+              <strong>{guarantor.name}</strong>
+              <small>{guarantor.relationship} · {guarantor.acknowledged ? "obligation acknowledged" : "acknowledgement outstanding"}</small>
+            </span>
+          </div>
+        ))}
+      </DrawerSection>
+
+      {policyBreaches.length > 0 && (
+        <DrawerSection title="Policy exceptions">
+          <ul className="drawer-flags">
+            {policyBreaches.map((breach) => (
+              <li key={breach}>{breach}</li>
+            ))}
+          </ul>
+          <p className="drawer-empty" style={{ marginTop: 10 }}>Approving despite these writes an entry to the exception register.</p>
+        </DrawerSection>
+      )}
 
       {decided && (
         <DrawerSection title="Decision">
@@ -190,6 +262,15 @@ export function LoanDrawer({ id, onClose }: { id: string | null; onClose: () => 
         </>
       }
     >
+      <DrawerSection title="Classification">
+        <div className="field-grid">
+          <Field label="BNR class" value={classOf(loan, state.policy)} bad={classTone(classOf(loan, state.policy)) === "danger"} good={classTone(classOf(loan, state.policy)) === "success"} />
+          <Field label="Days past due" value={String(loan.daysPastDue)} bad={loan.daysPastDue >= 90} />
+          <Field label="Provision" value={formatRwf(provisionFor(loan, state.policy))} />
+          <Field label="Restructured" value={loan.restructureCount + " of " + state.policy.maxRestructures + " permitted"} bad={loan.restructureCount >= state.policy.maxRestructures} />
+        </div>
+      </DrawerSection>
+
       <DrawerSection title="Position">
         <div className="field-grid">
           <Field label="Principal" value={formatRwf(loan.principal)} />

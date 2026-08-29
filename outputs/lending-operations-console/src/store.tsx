@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from "react";
 import { APP_VERSION, createSeedState } from "./data";
 import { buildSchedule, installmentOf, monthLabel } from "./lib/schedule";
-import type { AuditEvent, DemoState, DocumentStatus, EmploymentVerificationStatus, RiskBand, StaffRole } from "./types";
+import { breaches } from "./lib/policy";
+import { officers } from "./lib/roles";
+import type { AuditEvent, DemoState, DocumentStatus, EmploymentVerificationStatus, PolicyParameters, RiskBand, StaffRole } from "./types";
 
-const STORAGE_KEY = "lending-console-demo-v2";
+const STORAGE_KEY = "lending-console-demo-v" + APP_VERSION;
 
 export type Action =
   | { type: "SET_ROLE"; role: StaffRole }
@@ -17,6 +19,10 @@ export type Action =
   | { type: "RESTRUCTURE"; caseId: string; term: number; reason: string }
   | { type: "ESCALATE"; caseId: string; reason: string }
   | { type: "RESOLVE_COMPLIANCE"; caseId: string; status: "Cleared" | "Escalated"; note: string }
+  | { type: "WRITE_OFF"; loanId: string; reason: string }
+  | { type: "RESOLVE_COMPLAINT"; complaintId: string; status: "Acknowledged" | "Investigating" | "Resolved"; resolution?: string }
+  | { type: "RESOLVE_EXCEPTION"; exceptionId: string; status: "Approved" | "Declined"; note: string }
+  | { type: "SET_POLICY"; patch: Partial<PolicyParameters> }
   | { type: "RESET" };
 
 /** The demo clock is anchored to 27 Aug 2026 11:32 and advances 3 minutes per action, so the
@@ -38,6 +44,7 @@ function reducer(state: DemoState, action: Action): DemoState {
 
   const clock = state.clock + 1;
   const at = stampFor(clock);
+  const actingOfficer = officers[state.activeRole];
   const log = (event: Omit<AuditEvent, "id" | "at">): AuditEvent[] => [{ ...event, id: "AUD-" + (state.audit.length + 1), at }, ...state.audit];
   const next = { ...state, clock };
 
@@ -53,7 +60,7 @@ function reducer(state: DemoState, action: Action): DemoState {
         audit: log({
           entityType: "document", entityId: action.documentId,
           action: action.status === "Verified" ? "Document verified" : "Document " + action.status.toLowerCase(),
-          actor: "Marie", before: document?.status, after: action.status, reason: action.reason,
+          actor: actingOfficer, before: document?.status, after: action.status, reason: action.reason,
         }),
       };
     }
@@ -62,7 +69,7 @@ function reducer(state: DemoState, action: Action): DemoState {
       return {
         ...next,
         applications: state.applications.map((item) => item.id === action.applicationId ? { ...item, requestedInfo: action.items } : item),
-        audit: log({ entityType: "application", entityId: action.applicationId, action: "Information requested", actor: "Marie", after: action.items.join(", "), reason: action.message }),
+        audit: log({ entityType: "application", entityId: action.applicationId, action: "Information requested", actor: actingOfficer, after: action.items.join(", "), reason: action.message }),
       };
 
     case "EMPLOYMENT_STATUS": {
@@ -95,7 +102,7 @@ function reducer(state: DemoState, action: Action): DemoState {
           : employer),
         audit: log({
           entityType: "employment", entityId: action.applicationId, action: "Employment verification " + action.status.toLowerCase(),
-          actor: action.actor ?? "Marie", before: application.employmentStatus, after: action.status,
+          actor: action.actor ?? actingOfficer, before: application.employmentStatus, after: action.status,
           reason: verified ? "Confirmed by employer HR" : undefined,
         }),
       };
@@ -104,10 +111,28 @@ function reducer(state: DemoState, action: Action): DemoState {
     case "DECIDE": {
       const application = state.applications.find((item) => item.id === action.applicationId);
       const approved = action.decision === "Approved" || action.decision === "Approved with conditions";
+      const customerName = state.customers.find((item) => item.id === application?.customerId)?.name ?? "";
+      // s36: an approval that departs from policy is registered, not silently allowed.
+      const raised = approved && application
+        ? breaches(application, state.policy).map((detail, index) => ({
+          id: "EXC-" + String(clock) + "-" + index,
+          entityId: application.id,
+          entityLabel: customerName + " · " + application.id,
+          type: detail.startsWith("DSCR") ? "Debt service coverage" : detail.startsWith("LTV") ? "Loan-to-value" : "Security",
+          detail,
+          justification: action.reason,
+          raisedBy: actingOfficer,
+          at,
+          status: "Open" as const,
+        }))
+        : [];
       return {
         ...next,
+        exceptions: [...raised, ...state.exceptions],
         applications: state.applications.map((item) => item.id === action.applicationId ? {
           ...item, decision: action.decision, decisionReason: action.reason,
+          approvedBy: approved ? actingOfficer : undefined,
+          approvedAt: approved ? at : undefined,
           stage: approved ? "Approved" : action.decision === "Rejected" ? "Rejected" : "Approval",
         } : item),
         loans: state.loans.map((loan) => loan.applicationId === action.applicationId && approved
@@ -115,7 +140,7 @@ function reducer(state: DemoState, action: Action): DemoState {
           : loan),
         audit: log({
           entityType: "application", entityId: action.applicationId, action: "Application " + action.decision.toLowerCase(),
-          actor: "Marie", before: application?.decision, after: action.decision, reason: action.reason,
+          actor: actingOfficer, before: application?.decision, after: action.decision, reason: action.reason,
         }),
       };
     }
@@ -146,9 +171,9 @@ function reducer(state: DemoState, action: Action): DemoState {
         ...next,
         collections: state.collections.map((item) => item.id === action.caseId ? {
           ...item, lastContact: "27 Aug 2026", nextAction: "Follow up in 2 days",
-          events: [{ id: "CE-" + clock, type: action.outcome, note: action.note, at, actor: "Claudine" }, ...item.events],
+          events: [{ id: "CE-" + clock, type: action.outcome, note: action.note, at, actor: actingOfficer }, ...item.events],
         } : item),
-        audit: log({ entityType: "collection", entityId: action.caseId, action: "Contact recorded", actor: "Claudine", after: action.outcome, reason: action.note }),
+        audit: log({ entityType: "collection", entityId: action.caseId, action: "Contact recorded", actor: actingOfficer, after: action.outcome, reason: action.note }),
       };
 
     case "PROMISE_TO_PAY":
@@ -157,9 +182,9 @@ function reducer(state: DemoState, action: Action): DemoState {
         collections: state.collections.map((item) => item.id === action.caseId ? {
           ...item, status: "Promise to pay", promiseDate: action.date, promiseAmount: action.amount,
           lastContact: "27 Aug 2026", nextAction: "Monitor promise due " + action.date,
-          events: [{ id: "CE-" + clock, type: "Promise to pay", note: action.note, at, actor: "Claudine" }, ...item.events],
+          events: [{ id: "CE-" + clock, type: "Promise to pay", note: action.note, at, actor: actingOfficer }, ...item.events],
         } : item),
-        audit: log({ entityType: "collection", entityId: action.caseId, action: "Promise to pay recorded", actor: "Claudine", after: action.date, reason: String(action.amount) }),
+        audit: log({ entityType: "collection", entityId: action.caseId, action: "Promise to pay recorded", actor: actingOfficer, after: action.date, reason: String(action.amount) }),
       };
 
     case "RESTRUCTURE": {
@@ -178,9 +203,9 @@ function reducer(state: DemoState, action: Action): DemoState {
         } : entry),
         collections: state.collections.map((entry) => entry.id === action.caseId ? {
           ...entry, status: "Restructured", nextAction: "Monitor restructured schedule",
-          events: [{ id: "CE-" + clock, type: "Restructured", note: "Rescheduled over " + action.term + " months · " + action.reason, at, actor: "Claudine" }, ...entry.events],
+          events: [{ id: "CE-" + clock, type: "Restructured", note: "Rescheduled over " + action.term + " months · " + action.reason, at, actor: actingOfficer }, ...entry.events],
         } : entry),
-        audit: log({ entityType: "loan", entityId: loan.id, action: "Loan restructured", actor: "Claudine", before: loan.term + " months", after: action.term + " months", reason: action.reason }),
+        audit: log({ entityType: "loan", entityId: loan.id, action: "Loan restructured", actor: actingOfficer, before: loan.term + " months", after: action.term + " months", reason: action.reason }),
       };
     }
 
@@ -193,10 +218,10 @@ function reducer(state: DemoState, action: Action): DemoState {
         ...next,
         collections: state.collections.map((entry) => entry.id === action.caseId ? {
           ...entry, status: "Escalated", nextAction: "Awaiting compliance review",
-          events: [{ id: "CE-" + clock, type: "Escalated", note: action.reason, at, actor: "Claudine" }, ...entry.events],
+          events: [{ id: "CE-" + clock, type: "Escalated", note: action.reason, at, actor: actingOfficer }, ...entry.events],
         } : entry),
-        complianceCases: [{ id, customerId: customer.id, customerName: customer.name, type: "Collections escalation", severity: "High", status: "Open", owner: "Claudine", openedAt: at, note: action.reason }, ...state.complianceCases],
-        audit: log({ entityType: "compliance", entityId: id, action: "Compliance case opened", actor: "Claudine", after: "Open", reason: action.reason }),
+        complianceCases: [{ id, customerId: customer.id, customerName: customer.name, type: "Collections escalation", severity: "High", status: "Open", owner: actingOfficer, openedAt: at, note: action.reason }, ...state.complianceCases],
+        audit: log({ entityType: "compliance", entityId: id, action: "Compliance case opened", actor: actingOfficer, after: "Open", reason: action.reason }),
       };
     }
 
@@ -204,7 +229,52 @@ function reducer(state: DemoState, action: Action): DemoState {
       return {
         ...next,
         complianceCases: state.complianceCases.map((item) => item.id === action.caseId ? { ...item, status: action.status } : item),
-        audit: log({ entityType: "compliance", entityId: action.caseId, action: "Compliance case " + action.status.toLowerCase(), actor: "Claudine", after: action.status, reason: action.note }),
+        audit: log({ entityType: "compliance", entityId: action.caseId, action: "Compliance case " + action.status.toLowerCase(), actor: actingOfficer, after: action.status, reason: action.note }),
+      };
+
+    case "WRITE_OFF": {
+      const loan = state.loans.find((item) => item.id === action.loanId);
+      if (!loan) return state;
+      return {
+        ...next,
+        loans: state.loans.map((item) => item.id === action.loanId
+          ? { ...item, writtenOffAt: at, writeOffReason: action.reason, status: "Closed" as const, outstanding: 0 }
+          : item),
+        audit: log({
+          entityType: "loan", entityId: action.loanId, action: "Facility written off", actor: actingOfficer,
+          before: String(loan.outstanding), after: "0",
+          reason: action.reason + " — write-off does not extinguish the debt; recovery may continue.",
+        }),
+      };
+    }
+
+    case "RESOLVE_COMPLAINT":
+      return {
+        ...next,
+        complaints: state.complaints.map((item) => item.id === action.complaintId
+          ? { ...item, status: action.status, resolution: action.resolution ?? item.resolution, resolvedAt: action.status === "Resolved" ? at : item.resolvedAt, owner: actingOfficer }
+          : item),
+        audit: log({ entityType: "complaint", entityId: action.complaintId, action: "Complaint " + action.status.toLowerCase(), actor: actingOfficer, after: action.status, reason: action.resolution }),
+      };
+
+    case "RESOLVE_EXCEPTION":
+      return {
+        ...next,
+        exceptions: state.exceptions.map((item) => item.id === action.exceptionId
+          ? { ...item, status: action.status, approvedBy: actingOfficer }
+          : item),
+        audit: log({ entityType: "exception", entityId: action.exceptionId, action: "Exception " + action.status.toLowerCase(), actor: actingOfficer, after: action.status, reason: action.note }),
+      };
+
+    case "SET_POLICY":
+      return {
+        ...next,
+        policy: { ...state.policy, ...action.patch },
+        audit: log({
+          entityType: "policy", entityId: "CREDIT-POLICY", action: "Policy parameter changed", actor: actingOfficer,
+          after: Object.entries(action.patch).map(([key, value]) => key + " = " + String(value)).join(", "),
+          reason: "Board-approved parameter change",
+        }),
       };
   }
 }

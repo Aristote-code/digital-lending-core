@@ -1,8 +1,9 @@
 import { buildSchedule, installmentOf, monthLabel } from "./lib/schedule";
-import type { Application, ApplicationDocument, Customer, DemoState, KycDetail, Loan, LoanStatus, RiskBand } from "./types";
+import { DEFAULT_POLICY, dscrOf, gradeFor } from "./lib/policy";
+import type { Application, ApplicationDocument, Collateral, Complaint, Customer, DemoState, Guarantor, KycDetail, Loan, LoanStatus, PolicyException, RelatedPartyType, RiskBand } from "./types";
 
 /** Bump when the shape of DemoState changes so stale localStorage is discarded. */
-export const APP_VERSION = 5;
+export const APP_VERSION = 6;
 
 export const DEMO_TODAY = "27 Aug 2026";
 
@@ -23,6 +24,19 @@ function kyc(overrides: Partial<KycDetail> = {}): KycDetail {
 
 const names = ["Eric Nshimiyimana", "Diane Uwera", "Patrick Habimana", "Aline Uwase", "Kevin Mugisha", "Claudine Ingabire", "Emmanuel Niyonzima", "Sandrine Mukamana", "David Mutesi", "Grace Umutesi", "Yves Ishimwe", "Chantal Nyirabazungu", "Fabrice Rukundo", "Odette Kayitesi", "Samuel Hakizimana", "Irene Uwimana", "Christian Bizimana"];
 const riskCycle: RiskBand[] = ["Low", "Medium", "Low", "High", "Medium"];
+const sectors = ["Trade", "Agriculture", "Construction", "Transport", "Manufacturing", "Services", "Real estate"];
+const districts = ["Gasabo", "Kicukiro", "Nyarugenge", "Musanze", "Rubavu", "Huye"];
+
+/** Two related parties in the book, so the s18/s35 controls have something to bite on. */
+const relatedParties: Record<number, RelatedPartyType> = { 2: "Director", 6: "Staff" };
+
+function collateral(id: string, type: Collateral["type"], description: string, owner: string, marketValue: number, registered = true): Collateral {
+  return {
+    id, type, description, owner, marketValue,
+    forcedSaleValue: Math.round(marketValue * 0.75),
+    valuedAt: "18 Aug 2026", insured: type !== "Machinery", registered, enforceable: registered,
+  };
+}
 
 const extraCustomers: Customer[] = names.map((name, index) => ({
   id: "CUS-" + String(324 + index).padStart(5, "0"),
@@ -40,12 +54,15 @@ const extraCustomers: Customer[] = names.map((name, index) => ({
   status: index === 8 ? "In review" : "Active",
   assigned: ["Marie", "Christine", "Jean-Paul"][index % 3],
   kycDetail: kyc(index === 8 ? { idStatus: "Pending", selfieMatch: "Pending", liveness: "Pending" } : {}),
+  relatedParty: relatedParties[index] ?? "None",
+  sector: sectors[index % sectors.length],
+  district: districts[index % districts.length],
 }));
 
 const customers: Customer[] = [
-  { id: "CUS-00321", name: "John Doe", initials: "JD", type: "Salaried", phone: "+250 788 240 412", email: "john.doe@example.rw", nationalId: "1198765432100978", employer: "IST Solutions", monthlyIncome: 1200000, monthlyObligations: 250000, kyc: "Verified", risk: "Medium", status: "In review", assigned: "Marie", kycDetail: kyc() },
-  { id: "CUS-00322", name: "Jane Uwase", initials: "JU", type: "Salaried", phone: "+250 788 240 413", email: "jane.uwase@example.rw", nationalId: "1198765432101082", employer: "Great Lakes Trading", monthlyIncome: 1500000, monthlyObligations: 1100000, kyc: "Verified", risk: "High", status: "In review", assigned: "Marie", kycDetail: kyc({ dob: "04 Mar 1989", address: "Nyarugenge, Kigali", duplicateIdentity: "None found", suspiciousAccount: "Flagged for review" }) },
-  { id: "CUS-00323", name: "Alice Mukamana", initials: "AM", type: "Business owner", phone: "+250 788 240 414", email: "alice.mukamana@example.rw", nationalId: "1198765432101194", employer: "Mukamana Home Supplies", monthlyIncome: 980000, monthlyObligations: 420000, kyc: "Verified", risk: "High", status: "Active", assigned: "Claudine", kycDetail: kyc({ dob: "22 Jul 1985", address: "Kimironko, Gasabo, Kigali" }) },
+  { id: "CUS-00321", name: "John Doe", initials: "JD", type: "Salaried", phone: "+250 788 240 412", email: "john.doe@example.rw", nationalId: "1198765432100978", employer: "IST Solutions", monthlyIncome: 1200000, monthlyObligations: 250000, kyc: "Verified", risk: "Medium", status: "In review", assigned: "Marie", kycDetail: kyc(), relatedParty: "None", sector: "Services", district: "Gasabo" },
+  { id: "CUS-00322", name: "Jane Uwase", initials: "JU", type: "Salaried", phone: "+250 788 240 413", email: "jane.uwase@example.rw", nationalId: "1198765432101082", employer: "Great Lakes Trading", monthlyIncome: 1500000, monthlyObligations: 1100000, kyc: "Verified", risk: "High", status: "In review", assigned: "Marie", kycDetail: kyc({ dob: "04 Mar 1989", address: "Nyarugenge, Kigali", duplicateIdentity: "None found", suspiciousAccount: "Flagged for review" }), relatedParty: "None", sector: "Trade", district: "Nyarugenge" },
+  { id: "CUS-00323", name: "Alice Mukamana", initials: "AM", type: "Business owner", phone: "+250 788 240 414", email: "alice.mukamana@example.rw", nationalId: "1198765432101194", employer: "Mukamana Home Supplies", monthlyIncome: 980000, monthlyObligations: 420000, kyc: "Verified", risk: "High", status: "Active", assigned: "Claudine", kycDetail: kyc({ dob: "22 Jul 1985", address: "Kimironko, Gasabo, Kigali" }), relatedParty: "None", sector: "Trade", district: "Gasabo" },
   ...extraCustomers,
 ];
 
@@ -110,6 +127,9 @@ const applications: Application[] = [
     positives: ["Stable employment since January 2024", "Consistent monthly salary deposits", "No delinquencies on existing facilities"],
     concerns: ["Existing obligations of RWF 250,000 per month", "Requested amount exceeds affordability ceiling"],
     redFlags: [],
+    grade: gradeFor(70), dscr: dscrOf(1200000, 250000, 233333),
+    collateral: [],
+    guarantors: [{ id: "GUA-01", name: "Providence Uwase", relationship: "Spouse", nationalId: "1198870032104411", monthlyIncome: 640000, documented: true, acknowledged: true }],
   },
   {
     id: "APP-00413", customerId: "CUS-00322", product: "Salary Loan", requested: 5000000, recommended: 0, term: 18,
@@ -137,6 +157,8 @@ const applications: Application[] = [
     positives: ["Identity and KYC checks cleared"],
     concerns: ["Contract employment under two years", "Declared salary exceeds observed deposits by 21%"],
     redFlags: ["Debt-to-income is 73%", "Credit arrears detected on two facilities", "Employer could not verify declared salary"],
+    grade: gradeFor(49), dscr: dscrOf(1500000, 1100000, 320000),
+    collateral: [], guarantors: [],
   },
   ...extraCustomers.slice(0, 8).map((customer, index): Application => {
     const risk = riskCycle[index % riskCycle.length];
@@ -167,8 +189,35 @@ const applications: Application[] = [
       },
       positives: ["Salary deposits observed"], concerns: ["Limited credit history"],
       redFlags: index === 3 ? ["Previous late payment"] : [],
+      grade: gradeFor(82 - index * 4),
+      dscr: dscrOf(customer.monthlyIncome, customer.monthlyObligations, Math.round(requested / 12)),
+      collateral: index % 3 === 0 ? [collateral("COL-A" + index, "Motor vehicle", "Toyota Hiace · RAB 220 K", customer.name, Math.round(requested * 1.9), index !== 3)] : [],
+      guarantors: [],
     };
   }),
+  {
+    // A large exposure, so the Board tier of the authority matrix is demonstrable.
+    id: "APP-00422", customerId: "CUS-00326", product: "Business Loan", requested: 18000000, recommended: 15000000, term: 24,
+    purpose: "Warehouse expansion", stage: "Approval", riskScore: 76, risk: "Medium", kyc: "Verified",
+    employmentStatus: "Verified", submittedAt: "24 Aug 2026, 10:05", assigned: "Christine", approver: "Board Credit Committee",
+    waiting: "2d 6h", decision: "Pending", documents: [], factors: johnFactors,
+    bureau: {
+      status: "Received", receivedAt: "26 Aug 2026, 08:40", openLoans: 2, outstanding: 6400000, monthlyObligations: 480000, delinquencies: 0, defaults: 0,
+      facilities: [{ institution: "I&M Bank Rwanda", type: "Business loan", outstanding: 6400000, monthly: 480000, status: "Active" }],
+      repaymentHistory: ["Jun 2026", "Jul 2026", "Aug 2026"].map((period) => ({ period, status: "On time" })),
+    },
+    employment: {
+      reference: "EV-00230", position: "Proprietor", startDate: "04 Feb 2019", employmentType: "Self-employed",
+      declared: 4200000, payslip: 4200000, bankDeposit: 4120000, hrConfirmed: 4200000,
+      hrEmail: "accounts@kigalilogistics.rw", hrContact: "Finance Office", phoneCheck: "Completed", bankComparison: "Completed",
+    },
+    positives: ["Seven years trading history", "Turnover supports the proposed instalment"],
+    concerns: ["Single-sector concentration in transport"],
+    redFlags: [],
+    grade: gradeFor(76), dscr: dscrOf(4200000, 480000, 812500),
+    collateral: [collateral("COL-B1", "Real estate", "Warehouse · Masaka, Kicukiro · UPI 3/04/09/1188", "Claudine Ingabire", 34000000)],
+    guarantors: [{ id: "GUA-02", name: "Kigali Logistics Ltd", relationship: "Corporate guarantee", nationalId: "TIN 102938475", monthlyIncome: 0, documented: true, acknowledged: true }],
+  },
 ];
 
 /** Weighted so the book reads like a healthy portfolio: a realistic PAR rather than a third in arrears. */
@@ -189,15 +238,28 @@ const extraLoans: Loan[] = Array.from({ length: 28 }, (_, index) => {
   const paidCount = index % 6;
   const schedule = buildSchedule(principal, interest, term, paidCount);
   const paidToDate = schedule.reduce((sum, row) => sum + row.paid, 0);
+  const status = statuses[index % statuses.length];
+  // Spread arrears across the BNR bands so the portfolio shows the full ladder.
+  const daysPastDue =
+    status === "Defaulted" ? 210 :
+    status === "Late" ? 96 :
+    status === "Restructured" ? 12 :
+    index === 5 ? 41 : index === 11 ? 63 : index === 17 ? 140 : 0;
   return {
     id: "LN-" + String(46 + index).padStart(5, "0"), customerId: customer.id, principal,
     outstanding: principal + interest - paidToDate, interest, fees: Math.round(principal * 0.02), term,
     nextPayment: installmentOf(principal, interest, term),
     nextDue: schedule.find((row) => row.status !== "Paid")?.due ?? monthLabel(term),
-    paidToDate, risk: customer.risk, status: statuses[index % statuses.length], officer: customer.assigned,
+    paidToDate, risk: customer.risk, status, officer: customer.assigned,
     disbursementStatus: "Completed", destination: "MTN MoMo · ******" + String(5000 + index).slice(-4),
     disbursedAt: "12 Jul 2026", schedule,
     transactions: [{ id: "TX-" + String(70000000 + index * 137), type: "Disbursement", amount: principal, at: "12 Jul 2026, 10:04", reference: "MoMo", direction: "out" }],
+    daysPastDue, sector: customer.sector,
+    collateral: index % 4 === 0 ? [collateral("COL-L" + index, "Machinery", "Packing line · serial MX-" + (4400 + index), customer.name, Math.round(principal * 2.4))] : [],
+    restructureCount: status === "Restructured" ? 1 : 0,
+    lastRestructuredAt: status === "Restructured" ? "02 Jun 2026" : undefined,
+    monthsSinceRestructure: status === "Restructured" ? 2 : undefined,
+    recovered: 0,
   };
 });
 
@@ -210,6 +272,7 @@ const loans: Loan[] = [
     interest: 300000, fees: 50000, term: 12, nextPayment: installmentOf(2500000, 300000, 12), nextDue: monthLabel(0),
     paidToDate: 0, risk: "Medium", status: "Approved", officer: "Marie", disbursementStatus: "Ready",
     destination: "MTN MoMo · ******432", schedule: [], transactions: [],
+    daysPastDue: 0, sector: "Services", collateral: [], restructureCount: 0, recovered: 0,
   },
   {
     id: "LN-00038", customerId: "CUS-00323", principal: 3200000, outstanding: 1760000, interest: 384000, fees: 64000,
@@ -217,6 +280,20 @@ const loans: Loan[] = [
     officer: "Claudine", disbursementStatus: "Completed", destination: "Bank of Kigali · ******908", disbursedAt: "10 Mar 2026",
     schedule: aliceSchedule.map((row, index) => (index === 4 ? { ...row, due: "13 Aug 2026", status: "Late", paid: 0 } : row)),
     transactions: [{ id: "TX-68410023", type: "Disbursement", amount: 3200000, at: "10 Mar 2026, 09:12", reference: "Bank of Kigali", direction: "out" }],
+    daysPastDue: 14, sector: "Trade",
+    collateral: [collateral("COL-C1", "Real estate", "Commercial plot · Kimironko · UPI 1/02/07/4471", "Alice Mukamana", 5200000)],
+    restructureCount: 0, recovered: 0,
+  },
+  // A written-off facility, so the write-off and recovery ratios are not empty.
+  {
+    id: "LN-00021", customerId: "CUS-00331", principal: 1400000, outstanding: 0, interest: 168000, fees: 28000, term: 12,
+    nextPayment: 0, nextDue: "—", paidToDate: 240000, risk: "High", status: "Closed", officer: "Claude",
+    disbursementStatus: "Completed", destination: "MTN MoMo · ******771", disbursedAt: "14 Jan 2025",
+    schedule: [], transactions: [],
+    daysPastDue: 420, sector: "Agriculture", collateral: [], restructureCount: 2,
+    lastRestructuredAt: "09 Sep 2025", monthsSinceRestructure: 11,
+    writtenOffAt: "30 Jun 2026", writeOffReason: "Recovery no longer economically viable; borrower untraceable after twelve months.",
+    recovered: 310000,
   },
   ...extraLoans,
 ];
@@ -255,6 +332,34 @@ export function createSeedState(): DemoState {
     audit: [
       { id: "AUD-1", entityType: "application", entityId: "APP-00412", action: "Credit report received", actor: "System", at: "27 Aug 2026, 09:14", after: "Report received" },
       { id: "AUD-0", entityType: "application", entityId: "APP-00412", action: "Application received", actor: "Customer", at: "23 Aug 2026, 09:14", after: "Submitted" },
+    ],
+    policy: structuredClone(DEFAULT_POLICY),
+    exceptions: [
+      {
+        id: "EXC-00014", entityId: "APP-00417", entityLabel: "Aline Uwase · APP-00417", type: "Loan-to-value",
+        detail: "LTV 79% against a 60% cap for motor vehicle security.",
+        justification: "Borrower has a fifteen-year relationship and a clean repayment record; shortfall covered by a salary assignment.",
+        raisedBy: "Christine", approvedBy: "Claudine", at: "25 Aug 2026, 14:12", status: "Approved",
+      },
+      {
+        id: "EXC-00015", entityId: "APP-00419", entityLabel: "Claudine Ingabire · APP-00419", type: "Related party",
+        detail: "Applicant is a director of the institution.",
+        justification: "Facility granted on arm's-length terms; referred to Full Board with the interested director recused.",
+        raisedBy: "Jean-Paul", at: "26 Aug 2026, 09:31", status: "Open",
+      },
+    ],
+    complaints: [
+      {
+        id: "CPL-00031", customerId: "CUS-00323", customerName: "Alice Mukamana", channel: "Phone",
+        subject: "Penalty charge not explained", detail: "Borrower states the late-payment penalty applied on 20 August was not disclosed at signing.",
+        status: "Investigating", receivedAt: "22 Aug 2026, 11:14", owner: "Diane",
+      },
+      {
+        id: "CPL-00030", customerId: "CUS-00330", customerName: "Grace Umutesi", channel: "Email",
+        subject: "Repayment schedule not received", detail: "No schedule was issued after disbursement.",
+        status: "Resolved", receivedAt: "18 Aug 2026, 08:52", resolvedAt: "19 Aug 2026, 10:20",
+        resolution: "Schedule reissued by email and confirmed received.", owner: "Diane",
+      },
     ],
   };
 }

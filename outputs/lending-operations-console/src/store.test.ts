@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { createSeedState } from "./data";
 import { reducer, type Action } from "./store";
 import { buildSchedule, monthLabel } from "./lib/schedule";
-import { navFor, queueCount, roles } from "./lib/roles";
+import { can, denialReason, navFor, queueCount, roles } from "./lib/roles";
+import {
+  approvalGate, authorityFor, canUpgrade, classify, DEFAULT_POLICY, isNpl,
+  kris, provisionRate, restructureGate, tierLimit,
+} from "./lib/policy";
 import type { DemoState } from "./types";
 
 function run(state: DemoState, ...actions: Action[]) {
@@ -162,7 +166,7 @@ describe("role-aware navigation", () => {
     expect(ids("Collections")).toContain("collections");
     expect(ids("Compliance")).toContain("compliance");
     expect(ids("Credit Manager")).toContain("approvals");
-    expect(ids("CEO")).toHaveLength(9);
+    expect(ids("CEO")).toHaveLength(12);
   });
 
   it("derives queue badges from live state", () => {
@@ -188,5 +192,190 @@ describe("amortization", () => {
     expect(monthLabel(4)).toBe("30 Jan 2027");
     expect(monthLabel(17, 31)).toBe("29 Feb 2028"); // 2028 is a leap year
     expect(buildSchedule(1_000_000, 0, 12).every((row) => !row.due.startsWith("31 Feb"))).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Credit policy controls
+ * ------------------------------------------------------------------ */
+
+describe("BNR asset classification", () => {
+  const policy = DEFAULT_POLICY;
+
+  it("maps days past due onto the five prescribed classes", () => {
+    expect(classify(0, policy)).toBe("Normal");
+    expect(classify(29, policy)).toBe("Normal");
+    expect(classify(30, policy)).toBe("Watch");
+    expect(classify(89, policy)).toBe("Watch");
+    expect(classify(90, policy)).toBe("Substandard");
+    expect(classify(179, policy)).toBe("Substandard");
+    expect(classify(180, policy)).toBe("Doubtful");
+    expect(classify(364, policy)).toBe("Doubtful");
+    expect(classify(365, policy)).toBe("Loss");
+  });
+
+  it("attaches the minimum provision rate to each class", () => {
+    expect(provisionRate("Normal", policy)).toBe(0.01);
+    expect(provisionRate("Watch", policy)).toBe(0.03);
+    expect(provisionRate("Substandard", policy)).toBe(0.2);
+    expect(provisionRate("Doubtful", policy)).toBe(0.5);
+    expect(provisionRate("Loss", policy)).toBe(1);
+  });
+
+  it("treats substandard and worse as non-performing", () => {
+    expect(isNpl("Normal")).toBe(false);
+    expect(isNpl("Watch")).toBe(false);
+    expect(isNpl("Substandard")).toBe(true);
+    expect(isNpl("Doubtful")).toBe(true);
+    expect(isNpl("Loss")).toBe(true);
+  });
+});
+
+describe("delegated approval authority", () => {
+  const policy = DEFAULT_POLICY;
+
+  it("tiers by share of core capital", () => {
+    expect(tierLimit("Credit Officer", policy)).toBe(2_400_000);
+    expect(tierLimit("Credit Manager", policy)).toBe(12_000_000);
+    expect(tierLimit("Board Credit Committee", policy)).toBe(30_000_000);
+  });
+
+  it("routes an exposure to the lowest authority that covers it", () => {
+    expect(authorityFor(1_000_000, policy)).toBe("Credit Officer");
+    expect(authorityFor(2_500_000, policy)).toBe("Credit Manager");
+    expect(authorityFor(18_000_000, policy)).toBe("Board Credit Committee");
+    expect(authorityFor(45_000_000, policy)).toBe("Full Board");
+  });
+
+  it("recalculates every limit when the Board changes core capital", () => {
+    const doubled = { ...policy, coreCapital: policy.coreCapital * 2 };
+    expect(tierLimit("Credit Officer", doubled)).toBe(4_800_000);
+    expect(authorityFor(2_500_000, doubled)).toBe("Credit Officer");
+  });
+});
+
+describe("approval gate", () => {
+  const state = createSeedState();
+  const policy = state.policy;
+  const john = state.applications.find((a) => a.id === "APP-00412")!;
+  const johnCustomer = state.customers.find((c) => c.id === john.customerId)!;
+
+  it("refuses a role with no approval authority", () => {
+    const gate = approvalGate(john, johnCustomer, "Loan Officer", "Marie", policy);
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain("no credit approval authority");
+  });
+
+  it("refuses the officer who originated the file", () => {
+    // Marie originated APP-00412; even holding authority she may not approve it.
+    const gate = approvalGate(john, johnCustomer, "Credit Manager", "Marie", policy);
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain("originated");
+  });
+
+  it("refuses an authority below the required tier", () => {
+    const gate = approvalGate(john, johnCustomer, "Credit Officer", "Eric", policy);
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toContain("Credit Manager");
+  });
+
+  it("sends related-party facilities to the Full Board", () => {
+    const related = state.customers.find((c) => c.relatedParty !== "None")!;
+    const application = state.applications.find((a) => a.customerId === related.id)!;
+    const gate = approvalGate(application, related, "CEO", "Patrick", policy);
+    expect(gate.allowed).toBe(false);
+    expect(gate.requiredAuthority).toBe("Full Board");
+    expect(gate.reason).toContain("related party");
+  });
+
+  it("allows an unconflicted officer holding sufficient authority", () => {
+    const gate = approvalGate(john, johnCustomer, "Credit Manager", "Claudine", policy);
+    expect(gate.allowed).toBe(true);
+    expect(gate.requiredAuthority).toBe("Credit Manager");
+  });
+});
+
+describe("separation of duties", () => {
+  it("keeps origination, approval and disbursement in different hands", () => {
+    expect(can("Loan Officer", "approve")).toBe(false);
+    expect(can("Loan Officer", "disburse")).toBe(false);
+    expect(can("Credit Manager", "disburse")).toBe(false);
+    expect(can("Credit Manager", "originate")).toBe(false);
+    expect(can("Finance", "approve")).toBe(false);
+    expect(can("Finance", "disburse")).toBe(true);
+    expect(can("Credit Manager", "approve")).toBe(true);
+  });
+
+  it("names who does hold the duty when refusing", () => {
+    expect(denialReason("Finance", "approve")).toContain("Credit Officer");
+    expect(denialReason("Loan Officer", "disburse")).toContain("Finance");
+  });
+});
+
+describe("restructuring limits", () => {
+  const policy = DEFAULT_POLICY;
+  const base = createSeedState().loans[0];
+
+  it("permits no more than twice over the life of a facility", () => {
+    expect(restructureGate({ ...base, restructureCount: 1 }, policy).allowed).toBe(true);
+    const spent = restructureGate({ ...base, restructureCount: 2 }, policy);
+    expect(spent.allowed).toBe(false);
+    expect(spent.reason).toContain("no more than 2");
+  });
+
+  it("holds an upgrade until the seasoning period is served", () => {
+    expect(canUpgrade({ ...base, lastRestructuredAt: "02 Jun 2026", monthsSinceRestructure: 2 }, policy)).toBe(false);
+    expect(canUpgrade({ ...base, lastRestructuredAt: "02 Jun 2026", monthsSinceRestructure: 3 }, policy)).toBe(true);
+    expect(canUpgrade(base, policy)).toBe(true);
+  });
+});
+
+describe("policy exceptions", () => {
+  it("registers an approval taken below the DSCR floor", () => {
+    const state = createSeedState();
+    const jane = state.applications.find((a) => a.id === "APP-00413")!;
+    expect(jane.dscr).toBeLessThan(state.policy.dscrFloor);
+    const next = reducer(state, { type: "DECIDE", applicationId: jane.id, decision: "Approved", reason: "Board override" });
+    expect(next.exceptions.some((e) => e.entityId === jane.id && e.type === "Debt service coverage")).toBe(true);
+  });
+
+  it("records no exception when the file sits within policy", () => {
+    const state = createSeedState();
+    const john = state.applications.find((a) => a.id === "APP-00412")!;
+    const before = state.exceptions.length;
+    const next = reducer(state, { type: "DECIDE", applicationId: john.id, decision: "Approved", reason: "Within policy" });
+    expect(next.exceptions.length).toBe(before);
+  });
+});
+
+describe("write-off", () => {
+  it("closes the exposure without extinguishing the debt", () => {
+    const state = createSeedState();
+    const loan = state.loans.find((l) => l.outstanding > 0)!;
+    const next = reducer(state, { type: "WRITE_OFF", loanId: loan.id, reason: "Recovery no longer economically viable" });
+    const after = next.loans.find((l) => l.id === loan.id)!;
+    expect(after.outstanding).toBe(0);
+    expect(after.writtenOffAt).toBeTruthy();
+    expect(next.audit[0].reason).toContain("does not extinguish the debt");
+  });
+});
+
+describe("portfolio indicators", () => {
+  it("derives every s41 indicator from live state", () => {
+    const state = createSeedState();
+    const k = kris(state);
+    expect(k.nplRatio).toBeGreaterThan(0);
+    expect(k.provisions).toBeGreaterThan(0);
+    expect(k.writeOffRatio).toBeGreaterThan(0);
+    expect(k.recoveryRate).toBeGreaterThan(0);
+  });
+
+  it("moves NPL and provisions when a facility deteriorates", () => {
+    const state = createSeedState();
+    const before = kris(state);
+    const worse = { ...state, loans: state.loans.map((l, i) => (i === 0 ? { ...l, daysPastDue: 200 } : l)) };
+    const after = kris(worse);
+    expect(after.npl).toBeGreaterThan(before.npl);
+    expect(after.provisions).toBeGreaterThan(before.provisions);
   });
 });

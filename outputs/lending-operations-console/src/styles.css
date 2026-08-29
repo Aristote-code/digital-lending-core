@@ -771,3 +771,22 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
 .calendar-day.selected { background: var(--brand-fill); color: var(--brand-ink); }
 /* A dialog raised from a drawer must sit above it, not behind. */
 .dialog-drop { z-index: 70; }
+
+/* ---- Policy gates: a blocked control explains itself rather than sitting dead ---- */
+.gate { display: flex; align-items: flex-start; gap: 10px; padding: 13px 14px; margin-top: 4px; border: 1px solid color-mix(in oklch, var(--amber) 32%, transparent); border-radius: var(--r-lg); background: var(--amber-soft); color: var(--amber); font-size: 13.5px; line-height: 1.5; }
+.gate svg { flex: none; margin-top: 1px; }
+.gate span { display: flex; flex-direction: column; gap: 3px; }
+.gate strong { font-weight: 600; }
+.drawer-empty { color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.guarantor { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: start; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); font-size: 13.5px; }
+.guarantor svg { color: var(--muted); margin-top: 2px; }
+.guarantor span { display: flex; flex-direction: column; gap: 2px; }
+.guarantor small { color: var(--muted); font-size: 12px; }
+.checklist p.unmet { color: var(--red); }
+.checklist p.unmet svg { color: var(--red); }
+.policy-rows { display: flex; flex-direction: column; }
+.policy-rows > div { display: grid; grid-template-columns: 1fr auto 96px; gap: 14px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.policy-rows > div:last-child { border-bottom: 0; }
+.policy-rows em { font-style: normal; color: var(--muted); font-size: 12px; }
+.policy-rows strong { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+label.stacked { display: grid; gap: 8px; font-size: 14px; margin-bottom: 14px; }
