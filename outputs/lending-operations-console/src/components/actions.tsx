@@ -5,6 +5,8 @@ import { Field, KV, Notice } from "./ui";
 import { Select } from "./Select";
 import { DatePicker, formatDisplay } from "./DatePicker";
 import { formatRwf } from "../lib/format";
+import { restructureGate } from "../lib/policy";
+import { can, denialReason } from "../lib/roles";
 import { useDemo } from "../store";
 import type { Application, CollectionCase, Loan } from "../types";
 
@@ -161,10 +163,14 @@ export function PromiseDialog({ open, onClose, item }: { open: boolean; onClose:
 }
 
 export function RestructureDialog({ open, onClose, item, loan }: { open: boolean; onClose: () => void; item: CollectionCase; loan: Loan }) {
-  const { dispatch } = useDemo();
+  const { state, dispatch } = useDemo();
   const [term, setTerm] = useState(String(loan.term + 6));
   const [reason, setReason] = useState("Borrower income reduced; extending the term restores affordability.");
   const newInstallment = Math.round(loan.outstanding / Math.max(Number(term) || 1, 1));
+  // s27: no more than twice over a facility's life, and never to conceal delinquency.
+  const gate = restructureGate(loan, state.policy);
+  const permitted = can(state.activeRole, "restructure");
+  const blocked = !permitted ? denialReason(state.activeRole, "restructure") : gate.allowed ? undefined : gate.reason;
 
   return (
     <Dialog open={open} onClose={onClose} title="Restructure loan" description={loan.id + " · " + formatRwf(loan.outstanding) + " outstanding"} size="lg">
@@ -189,7 +195,19 @@ export function RestructureDialog({ open, onClose, item, loan }: { open: boolean
             <Field label="Instalment" value={formatRwf(newInstallment)} good={newInstallment < loan.nextPayment} />
           </div>
         </div>
-        <Notice title="Requires manager approval" text="The original terms are preserved on the loan record; a new schedule is issued alongside them." />
+        {blocked ? (
+          <div className="gate">
+            <span>
+              <strong>This facility cannot be restructured</strong>
+              {blocked}
+            </span>
+          </div>
+        ) : (
+          <Notice
+            title={"Restructuring " + (loan.restructureCount + 1) + " of " + state.policy.maxRestructures + " · requires manager approval"}
+            text={"The original terms are preserved on the loan record. The facility may only be upgraded after " + state.policy.restructureSeasoningMonths + " months of satisfactory performance, and restructuring must not be used to conceal delinquency."}
+          />
+        )}
         <label>
           New term (months)
           <input value={term} onChange={(event) => setTerm(event.target.value.replace(/\D/g, ""))} required />
@@ -202,7 +220,7 @@ export function RestructureDialog({ open, onClose, item, loan }: { open: boolean
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn primary">Submit for approval</button>
+          <button className="btn primary" disabled={Boolean(blocked)}>Submit for approval</button>
         </div>
       </form>
     </Dialog>
