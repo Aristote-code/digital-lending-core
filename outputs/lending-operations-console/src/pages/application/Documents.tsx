@@ -120,9 +120,9 @@ export function Documents({ application }: { application: Application }) {
         open={rejecting}
         onClose={() => setRejecting(false)}
         document={selected}
-        onSubmit={(reason) => {
+        onSubmit={(reason, comment) => {
           if (!selected) return;
-          dispatch({ type: "DOCUMENT_STATUS", applicationId: application.id, documentId: selected.id, status: "Rejected", reason });
+          dispatch({ type: "DOCUMENT_STATUS", applicationId: application.id, documentId: selected.id, status: "Rejected", reason, comment });
           setRejecting(false);
           toast.error(selected.name + " rejected");
         }}
@@ -133,15 +133,16 @@ export function Documents({ application }: { application: Application }) {
   );
 }
 
-function RejectDialog({ open, onClose, document, onSubmit }: { open: boolean; onClose: () => void; document?: ApplicationDocument; onSubmit: (reason: string) => void }) {
+function RejectDialog({ open, onClose, document, onSubmit }: { open: boolean; onClose: () => void; document?: ApplicationDocument; onSubmit: (reason: string, comment: string) => void }) {
   const [reason, setReason] = useState(REJECT_REASONS[0]);
+  const [comment, setComment] = useState("Please upload a clearer copy showing all four corners.");
   return (
     <Dialog open={open} onClose={onClose} title="Reject document" description={document?.name}>
       <form
         className="form"
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit(reason);
+          onSubmit(reason, comment);
         }}
       >
         <label>
@@ -149,8 +150,8 @@ function RejectDialog({ open, onClose, document, onSubmit }: { open: boolean; on
           <Select value={reason} onChange={setReason} options={REJECT_REASONS} label="Rejection reason" />
         </label>
         <label>
-          Comment
-          <textarea defaultValue="Please upload a clearer copy showing all four corners." />
+          Comment to the borrower
+          <textarea required value={comment} onChange={(event) => setComment(event.target.value)} />
         </label>
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>

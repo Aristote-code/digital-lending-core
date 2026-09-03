@@ -3,7 +3,7 @@ import { DEFAULT_POLICY, dscrOf, gradeFor } from "./lib/policy";
 import type { Application, ApplicationDocument, Collateral, Complaint, Customer, DemoState, Guarantor, KycDetail, Loan, LoanStatus, PolicyException, RelatedPartyType, RiskBand } from "./types";
 
 /** Bump when the shape of DemoState changes so stale localStorage is discarded. */
-export const APP_VERSION = 6;
+export const APP_VERSION = 7;
 
 export const DEMO_TODAY = "27 Aug 2026";
 
@@ -302,6 +302,7 @@ export function createSeedState(): DemoState {
   return {
     version: APP_VERSION,
     activeRole: "Loan Officer",
+    borrowerId: "CUS-00321",
     clock: 0,
     customers: structuredClone(customers),
     applications: structuredClone(applications),

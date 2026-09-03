@@ -379,3 +379,78 @@ describe("portfolio indicators", () => {
     expect(after.provisions).toBeGreaterThan(before.provisions);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * Borrower portal — the two portals are one system
+ * ------------------------------------------------------------------ */
+
+describe("borrower portal", () => {
+  it("puts a borrower's application straight into the officer queue", () => {
+    const state = seed();
+    const before = state.applications.length;
+    const next = reducer(state, { type: "SUBMIT_APPLICATION", product: "Salary Loan", amount: 1_500_000, term: 12, purpose: "School fees" });
+    expect(next.applications).toHaveLength(before + 1);
+    const created = next.applications[0];
+    expect(created.customerId).toBe(state.borrowerId);
+    expect(created.stage).toBe("New");
+    expect(created.decision).toBe("Pending");
+    // The officer queue is simply the same list.
+    expect(queueCount("applications", next)).toBe(queueCount("applications", state) + 1);
+  });
+
+  it("grades a borrower's own application against the affordability floor", () => {
+    const state = seed();
+    const modest = reducer(state, { type: "SUBMIT_APPLICATION", product: "Salary Loan", amount: 600_000, term: 24, purpose: "Medical" });
+    const stretched = reducer(state, { type: "SUBMIT_APPLICATION", product: "Salary Loan", amount: 9_000_000, term: 6, purpose: "Medical" });
+    expect(modest.applications[0].dscr).toBeGreaterThan(stretched.applications[0].dscr);
+    expect(stretched.applications[0].recommended).toBeLessThan(stretched.applications[0].requested);
+  });
+
+  it("lets a borrower replace a document the officer rejected, clearing the reason", () => {
+    const state = seed();
+    const application = state.applications.find((item) => item.id === "APP-00412")!;
+    const target = application.documents[4];
+    const rejected = reducer(state, {
+      type: "DOCUMENT_STATUS", applicationId: application.id, documentId: target.id,
+      status: "Rejected", reason: "Unreadable", comment: "Please send a clearer photo.",
+    });
+    const afterReject = rejected.applications.find((item) => item.id === application.id)!.documents.find((d) => d.id === target.id)!;
+    expect(afterReject.rejectionReason).toBe("Unreadable");
+    // The officer's comment is what the borrower reads, so it must reach them.
+    expect(afterReject.detail).toBe("Please send a clearer photo.");
+
+    const replaced = reducer(rejected, { type: "UPLOAD_DOCUMENT", applicationId: application.id, documentId: target.id, name: target.name });
+    const afterUpload = replaced.applications.find((item) => item.id === application.id)!.documents.find((d) => d.id === target.id)!;
+    expect(afterUpload.status).toBe("Uploaded");
+    expect(afterUpload.rejectionReason).toBeUndefined();
+  });
+
+  it("records the key facts acknowledgement before the loan can be released", () => {
+    const state = seed();
+    const next = reducer(state, { type: "ACCEPT_OFFER", applicationId: "APP-00412" });
+    const application = next.applications.find((item) => item.id === "APP-00412")!;
+    expect(application.disclosureAcceptedAt).toBeTruthy();
+    expect(next.audit[0].reason).toContain("before acceptance");
+  });
+
+  it("settles the collections case when the borrower clears the arrears", () => {
+    const state = seed();
+    const open = state.collections[0];
+    expect(open.status).not.toBe("Closed");
+    const loan = state.loans.find((item) => item.id === open.loanId)!;
+    const next = reducer(state, { type: "MAKE_PAYMENT", loanId: loan.id, amount: open.amountOverdue });
+    const after = next.collections.find((item) => item.id === open.id)!;
+    expect(after.status).toBe("Closed");
+    expect(after.amountOverdue).toBe(0);
+    expect(next.loans.find((item) => item.id === loan.id)!.outstanding).toBeLessThan(loan.outstanding);
+  });
+
+  it("sends a borrower complaint to the compliance register", () => {
+    const state = seed();
+    const before = state.complaints.length;
+    const next = reducer(state, { type: "RAISE_COMPLAINT", subject: "A charge I do not understand", detail: "Penalty was not explained.", channel: "Email" });
+    expect(next.complaints).toHaveLength(before + 1);
+    expect(next.complaints[0].status).toBe("Received");
+    expect(next.complaints[0].customerId).toBe(state.borrowerId);
+  });
+});

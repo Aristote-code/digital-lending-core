@@ -18,6 +18,14 @@ import { Complaints } from "./pages/Complaints";
 import { Policy } from "./pages/Policy";
 import { Executive } from "./pages/Executive";
 import { HrVerification } from "./pages/HrVerification";
+import { BorrowerDashboard } from "./pages/borrower/Dashboard";
+import { BorrowerApply } from "./pages/borrower/Apply";
+import { BorrowerOffer } from "./pages/borrower/Offer";
+import { BorrowerDocuments } from "./pages/borrower/Documents";
+import { BorrowerLoan } from "./pages/borrower/MyLoan";
+import { BorrowerPay } from "./pages/borrower/Pay";
+import { BorrowerSupport } from "./pages/borrower/Support";
+import { BorrowerProfile } from "./pages/borrower/Profile";
 
 export function App() {
   return (
@@ -37,11 +45,21 @@ export function App() {
           <Route path="/collections" element={<Collections />} />
           <Route path="/collections/:id" element={<CollectionCase />} />
           <Route path="/compliance" element={<Compliance />} />
-        <Route path="/exceptions" element={<Exceptions />} />
-        <Route path="/complaints" element={<Complaints />} />
-        <Route path="/policy" element={<Policy />} />
+          <Route path="/exceptions" element={<Exceptions />} />
+          <Route path="/complaints" element={<Complaints />} />
+          <Route path="/policy" element={<Policy />} />
           <Route path="/executive" element={<Executive />} />
           <Route path="/verify-employment/:token" element={<HrVerification />} />
+
+          {/* Borrower portal — same state, different audience and device. */}
+          <Route path="/my" element={<BorrowerDashboard />} />
+          <Route path="/my/apply" element={<BorrowerApply />} />
+          <Route path="/my/offer/:id" element={<BorrowerOffer />} />
+          <Route path="/my/documents" element={<BorrowerDocuments />} />
+          <Route path="/my/loan" element={<BorrowerLoan />} />
+          <Route path="/my/pay/:id" element={<BorrowerPay />} />
+          <Route path="/my/support" element={<BorrowerSupport />} />
+          <Route path="/my/profile" element={<BorrowerProfile />} />
           <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>
         <Toaster richColors position="bottom-right" />

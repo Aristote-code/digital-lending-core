@@ -340,4 +340,6 @@ export interface DemoState {
   policy: PolicyParameters;
   exceptions: PolicyException[];
   complaints: Complaint[];
+  /** Who is signed in on the borrower side. The two portals share one state. */
+  borrowerId: string;
 }

@@ -114,3 +114,22 @@ recalculates every approval tier.
 
 `Infinity` cannot be persisted through JSON — the unbounded authority tier is
 modelled as `null`, not `Infinity`.
+
+## Borrower portal (durable)
+
+`/my/*` is the borrower's side, built on the **same state** as the operations
+console — that shared state is the point of the demo, not an implementation
+detail. An officer rejecting a document is immediately visible to the borrower,
+with the officer's own comment; a borrower's application lands in the officer
+queue; a borrower's payment settles the collections case.
+
+- **Mobile first.** Borrowers are on phones. `BorrowerShell` starts at 375px
+  with a bottom tab bar and becomes a top nav at 720px. The console stays
+  desktop-first; do not merge the two shells.
+- **Never leak internal vocabulary.** No risk grades, no BNR classifications,
+  no scores, no officer names, no internal stage names — `STAGE_COPY` in
+  `pages/borrower/Dashboard.tsx` translates each stage into what the borrower is
+  actually told.
+- **The offer screen is the key facts statement** (§20/§44): every cost, the
+  total repayable, the penalty rate, and acceptance gated on an explicit
+  acknowledgement. Do not add a charge that is not shown there.

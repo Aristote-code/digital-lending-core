@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from "react";
 import { APP_VERSION, createSeedState } from "./data";
 import { buildSchedule, installmentOf, monthLabel } from "./lib/schedule";
-import { breaches } from "./lib/policy";
+import { breaches, dscrOf, gradeFor } from "./lib/policy";
 import { officers } from "./lib/roles";
 import type { AuditEvent, DemoState, DocumentStatus, EmploymentVerificationStatus, PolicyParameters, RiskBand, StaffRole } from "./types";
 
@@ -9,7 +9,7 @@ const STORAGE_KEY = "lending-console-demo-v" + APP_VERSION;
 
 export type Action =
   | { type: "SET_ROLE"; role: StaffRole }
-  | { type: "DOCUMENT_STATUS"; applicationId: string; documentId: string; status: DocumentStatus; reason?: string }
+  | { type: "DOCUMENT_STATUS"; applicationId: string; documentId: string; status: DocumentStatus; reason?: string; comment?: string }
   | { type: "REQUEST_DOCUMENTS"; applicationId: string; items: string[]; message: string }
   | { type: "EMPLOYMENT_STATUS"; applicationId: string; status: EmploymentVerificationStatus; actor?: string }
   | { type: "DECIDE"; applicationId: string; decision: "Approved" | "Approved with conditions" | "Rejected" | "Manual review"; reason: string }
@@ -23,6 +23,12 @@ export type Action =
   | { type: "RESOLVE_COMPLAINT"; complaintId: string; status: "Acknowledged" | "Investigating" | "Resolved"; resolution?: string }
   | { type: "RESOLVE_EXCEPTION"; exceptionId: string; status: "Approved" | "Declined"; note: string }
   | { type: "SET_POLICY"; patch: Partial<PolicyParameters> }
+  | { type: "SET_BORROWER"; customerId: string }
+  | { type: "SUBMIT_APPLICATION"; product: string; amount: number; term: number; purpose: string }
+  | { type: "UPLOAD_DOCUMENT"; applicationId: string; documentId?: string; name: string }
+  | { type: "ACCEPT_OFFER"; applicationId: string }
+  | { type: "MAKE_PAYMENT"; loanId: string; amount: number }
+  | { type: "RAISE_COMPLAINT"; subject: string; detail: string; channel: "Phone" | "Email" | "Branch" | "SMS" }
   | { type: "RESET" };
 
 /** The demo clock is anchored to 27 Aug 2026 11:32 and advances 3 minutes per action, so the
@@ -55,7 +61,18 @@ function reducer(state: DemoState, action: Action): DemoState {
       return {
         ...next,
         applications: state.applications.map((item) => item.id === action.applicationId
-          ? { ...item, documents: item.documents.map((doc) => doc.id === action.documentId ? { ...doc, status: action.status, rejectionReason: action.reason } : doc) }
+          ? {
+            ...item,
+            documents: item.documents.map((doc) => doc.id === action.documentId
+              ? {
+                ...doc, status: action.status, rejectionReason: action.status === "Rejected" ? action.reason : undefined,
+                // The detail line is what the borrower reads, so it must follow the decision.
+                detail: action.status === "Rejected"
+                  ? (action.comment?.trim() || "Please send a replacement.")
+                  : action.status === "Verified" ? "Accepted" : doc.detail,
+              }
+              : doc),
+          }
           : item),
         audit: log({
           entityType: "document", entityId: action.documentId,
@@ -265,6 +282,133 @@ function reducer(state: DemoState, action: Action): DemoState {
           : item),
         audit: log({ entityType: "exception", entityId: action.exceptionId, action: "Exception " + action.status.toLowerCase(), actor: actingOfficer, after: action.status, reason: action.note }),
       };
+
+    case "SET_BORROWER":
+      return { ...next, borrowerId: action.customerId };
+
+    /* ---- Borrower portal. Both portals write to the same state, so an action
+       on one side is immediately visible on the other. ---- */
+
+    case "SUBMIT_APPLICATION": {
+      const customer = state.customers.find((item) => item.id === state.borrowerId);
+      if (!customer) return state;
+      const id = "APP-" + String(500 + state.applications.length);
+      const instalment = Math.round((action.amount * 1.12) / action.term);
+      const dscr = dscrOf(customer.monthlyIncome, customer.monthlyObligations, instalment);
+      const score = Math.max(35, Math.min(92, Math.round(72 + (dscr - 1.5) * 12)));
+      const application: DemoState["applications"][number] = {
+        id, customerId: customer.id, product: action.product, requested: action.amount,
+        recommended: dscr >= state.policy.dscrFloor ? action.amount : Math.round(action.amount * 0.7),
+        term: action.term, purpose: action.purpose, stage: "New", riskScore: score,
+        risk: score >= 72 ? "Low" : score >= 55 ? "Medium" : "High",
+        kyc: customer.kyc, employmentStatus: "Pending", submittedAt: at,
+        assigned: "Marie", approver: "Credit Manager", waiting: "just now", decision: "Pending",
+        documents: [
+          { id: id + "-D1", name: "National ID", status: "Missing", detail: "Required before assessment" },
+          { id: id + "-D2", name: "Recent payslip", status: "Missing", detail: "Most recent month" },
+          { id: id + "-D3", name: "Bank statement", status: "Missing", detail: "Last six months" },
+        ],
+        factors: [], positives: [], concerns: [], redFlags: [],
+        bureau: { status: "Pending", receivedAt: "—", openLoans: 0, outstanding: 0, monthlyObligations: customer.monthlyObligations, delinquencies: 0, defaults: 0, facilities: [], repaymentHistory: [] },
+        employment: {
+          reference: "EV-" + String(300 + state.applications.length), position: "—", startDate: "—", employmentType: "—",
+          declared: customer.monthlyIncome, payslip: 0, bankDeposit: 0, hrConfirmed: null,
+          hrEmail: "hr@" + customer.employer.toLowerCase().replaceAll(" ", "") + ".rw", hrContact: "HR Office",
+          phoneCheck: "Not started", bankComparison: "Not started",
+        },
+        grade: gradeFor(score), dscr, collateral: [], guarantors: [],
+      };
+      return {
+        ...next,
+        applications: [application, ...state.applications],
+        audit: log({ entityType: "application", entityId: id, action: "Application submitted", actor: customer.name, after: "New", reason: action.purpose }),
+      };
+    }
+
+    case "UPLOAD_DOCUMENT": {
+      const customer = state.customers.find((item) => item.id === state.borrowerId);
+      return {
+        ...next,
+        applications: state.applications.map((application) => application.id === action.applicationId ? {
+          ...application,
+          documents: application.documents.some((document) => document.id === action.documentId)
+            ? application.documents.map((document) => document.id === action.documentId
+              ? { ...document, status: "Uploaded" as const, uploadedAt: at, rejectionReason: undefined, detail: "Awaiting officer review" }
+              : document)
+            : [...application.documents, { id: action.applicationId + "-U" + clock, name: action.name, status: "Uploaded" as const, uploadedAt: at, detail: "Awaiting officer review" }],
+        } : application),
+        audit: log({ entityType: "document", entityId: action.documentId ?? action.applicationId, action: "Document uploaded", actor: customer?.name ?? "Customer", after: "Uploaded", reason: action.name }),
+      };
+    }
+
+    case "ACCEPT_OFFER": {
+      const customer = state.customers.find((item) => item.id === state.borrowerId);
+      return {
+        ...next,
+        applications: state.applications.map((application) => application.id === action.applicationId
+          ? { ...application, disclosureAcceptedAt: at }
+          : application),
+        loans: state.loans.map((loan) => loan.applicationId === action.applicationId
+          ? { ...loan, disbursementStatus: "Ready" as const }
+          : loan),
+        audit: log({
+          entityType: "application", entityId: action.applicationId, action: "Offer accepted by borrower",
+          actor: customer?.name ?? "Customer", after: "Accepted",
+          reason: "Key facts statement issued and acknowledged before acceptance",
+        }),
+      };
+    }
+
+    case "MAKE_PAYMENT": {
+      const loan = state.loans.find((item) => item.id === action.loanId);
+      const customer = state.customers.find((item) => item.id === state.borrowerId);
+      if (!loan) return state;
+      let remaining = action.amount;
+      const schedule = loan.schedule.map((row) => {
+        if (row.status === "Paid" || remaining <= 0) return row;
+        const owing = row.total - row.paid;
+        const applied = Math.min(owing, remaining);
+        remaining -= applied;
+        const paid = row.paid + applied;
+        return { ...row, paid, status: paid >= row.total ? ("Paid" as const) : row.status };
+      });
+      const stillLate = schedule.some((row) => row.status === "Late");
+      const reference = "TX-" + String(90000000 + clock);
+      return {
+        ...next,
+        loans: state.loans.map((item) => item.id === action.loanId ? {
+          ...item,
+          schedule,
+          paidToDate: item.paidToDate + action.amount,
+          outstanding: Math.max(0, item.outstanding - action.amount),
+          daysPastDue: stillLate ? item.daysPastDue : 0,
+          nextDue: schedule.find((row) => row.status !== "Paid")?.due ?? item.nextDue,
+          status: item.outstanding - action.amount <= 0 ? ("Paid" as const) : stillLate ? item.status : ("Active" as const),
+          transactions: [{ id: reference, type: "Repayment", amount: action.amount, at, reference: "MoMo", direction: "in" as const }, ...item.transactions],
+        } : item),
+        collections: state.collections.map((entry) => entry.loanId === action.loanId && !stillLate
+          ? {
+            ...entry, status: "Closed" as const, amountOverdue: 0, daysOverdue: 0, nextAction: "Case settled",
+            events: [{ id: "CE-" + clock, type: "Payment received", note: "Borrower paid " + action.amount + " via MoMo", at, actor: customer?.name ?? "Customer" }, ...entry.events],
+          }
+          : entry),
+        audit: log({ entityType: "loan", entityId: action.loanId, action: "Repayment received", actor: customer?.name ?? "Customer", after: String(action.amount), reason: "Paid via MoMo" }),
+      };
+    }
+
+    case "RAISE_COMPLAINT": {
+      const customer = state.customers.find((item) => item.id === state.borrowerId);
+      if (!customer) return state;
+      const id = "CPL-" + String(100 + state.complaints.length);
+      return {
+        ...next,
+        complaints: [{
+          id, customerId: customer.id, customerName: customer.name, channel: action.channel,
+          subject: action.subject, detail: action.detail, status: "Received", receivedAt: at, owner: "Diane",
+        }, ...state.complaints],
+        audit: log({ entityType: "complaint", entityId: id, action: "Complaint received", actor: customer.name, after: "Received", reason: action.subject }),
+      };
+    }
 
     case "SET_POLICY":
       return {

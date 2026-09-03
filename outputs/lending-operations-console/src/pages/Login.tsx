@@ -57,6 +57,12 @@ export function Login() {
             </button>
           ))}
         </div>
+        <div className="or">
+          <span>or</span>
+        </div>
+        <button className="btn full-btn" onClick={() => navigate("/my")}>
+          Enter the borrower portal
+        </button>
         <small className="prototype">Prototype environment · No real customer data</small>
       </section>
     </div>
